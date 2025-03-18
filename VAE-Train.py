@@ -7,12 +7,13 @@ from transformers import AutoTokenizer
 import numpy as np
 
 # Hyperparameters
-latent_dim = 8  # Dimension of latent space
-embedding_dim = 768  # Word embedding dimension
-max_len = 200  # Max length of input sequence
-vocab_size = 30522  # Vocabulary size for bert-base-uncased
-batch_size = 64
-epochs = 10
+latent_dim = 8
+embedding_dim = 768
+max_len = 150
+vocab_size = 30522
+batch_size = 128
+epochs = 50
+learning_rate = .01
 
 # Load IMDB dataset using Hugging Face datasets
 dataset = load_dataset('stanfordnlp/imdb')
@@ -90,7 +91,7 @@ def vae_loss(x_decoded, x, mu, logvar):
 # Initialize Model, Optimizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = VAE().to(device)
-optimizer = optim.AdamW(model.parameters())
+optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
 
 # Training Loop
 def train(epoch):
