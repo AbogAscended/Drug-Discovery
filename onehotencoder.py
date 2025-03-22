@@ -33,8 +33,10 @@ class onehotencoder:
             else:
                 tokens.append(sequence[i])
                 i += 1
+
         tokens.append('[EOS]')
         while len(tokens)<59: tokens.append('[PAD]')
+        
         indices = [self.cti.get(char) for char in tokens]
         return F.one_hot(torch.tensor(indices), num_classes=self.len)
 
