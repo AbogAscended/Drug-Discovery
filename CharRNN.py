@@ -22,8 +22,8 @@ class CharRNN(nn.Module):
         self.linear_layer = nn.Linear(self.hidden_size, self.output_size)
         
     def forward(self, x):
-            x_indices = torch.argmax(x, dim=2)
-            embed = self.embedding_layer(x_indices)
-            gru_out, _ = self.gru(embed)
-            out = self.linear_layer(gru_out)
-            return out
+        x_indices = torch.argmax(x, dim=2)
+        embed = self.embedding_layer(x_indices)
+        gru_out, _ = self.gru(embed)
+        out = self.linear_layer(gru_out)
+        return out
