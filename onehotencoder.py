@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 class onehotencoder:
     def __init__(self):
-        self.characters = ['C', 'c', 'N', 'n', 'O', 'o', 'S', 's', 'P', 'p', 'F', 'f', 'Cl', 'Br', 'I', 'B', 'b', 'H', 'h', '[', ']', '(', ')', '=', '#', '+', '-', '.', '/', '@', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '%', ':', ',', ';','$', '&', '*', '[BOS]','[EOS]','[PAD]']
+        self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]','[EOS]','[PAD]']
         self.cti = {char: idx for idx, char in enumerate(self.characters)}
         self.itc = {idx: char for char, idx in self.cti.items()}
         self.len = len(self.cti)

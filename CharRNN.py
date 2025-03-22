@@ -15,7 +15,7 @@ class CharRNN(nn.Module):
         self.dropout = dropout
         self.vocab_size = self.input_size = self.output_size = self.vocabulary
 
-        self.embedding_layer = nn.Embedding(self.vocab_size, self.embbeded_dim, padding_idx=49)
+        self.embedding_layer = nn.Embedding(self.vocab_size, self.embbeded_dim, padding_idx=27)
         self.gru = nn.GRU(self.embbeded_dim, self.hidden_size,
                                   self.num_layers, dropout=self.dropout,
                                   batch_first=True)
