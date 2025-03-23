@@ -30,5 +30,4 @@ carbon like carbon
 
 Physics informed neural network
 
-
 Loss = criteon(y,data) + (dx/dy - x~ + awdgw)**2
