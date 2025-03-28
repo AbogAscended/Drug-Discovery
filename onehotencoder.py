@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 class onehotencoder:
     def __init__(self):
-        self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]','[EOS]','[PAD]']
+        self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]', '[EOS]', '[UNK]', '[PAD]']
         self.cti = {char: idx for idx, char in enumerate(self.characters)}
         self.itc = {idx: char for char, idx in self.cti.items()}
         self.len = len(self.cti)
@@ -12,6 +12,9 @@ class onehotencoder:
     
     def decode(self, vec):
         return self.itc[torch.argmax(vec).item()]
+    
+    def getVocabSize(self):
+        return len(self.characters)
     
     def encode_sequence(self, sequence, targets = False):
         sequence = sequence.strip()
@@ -28,6 +31,9 @@ class onehotencoder:
                 tokens.append('Br')
                 i += 2
             elif i+4 < len(sequence) and sequence[i:i+5] == '[PAD]':
+                tokens.append('[PAD]')
+                i += 5
+            elif i+4 < len(sequence) and sequence[i:i+5] == '[UNK]':
                 tokens.append('[PAD]')
                 i += 5
             else:
