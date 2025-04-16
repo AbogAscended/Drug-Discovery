@@ -21,31 +21,6 @@ def convert_logits(logits):
     strings = endecode.decode_sequence(encoded)
     return strings
 
-# This class is used to calculate the weights of the generated SMILES strings
-def weights(logits, missing_string_boundary, wrong_value_in_padding, no_pad_token, fail_sanitize, fail_swaps):
-    weights = []
-    weight = 0
-
-    # Convert the logits to SMILES strings
-    strings = convert_logits(logits)
-
-    # Iterate through the generated SMILES strings
-    for string in strings:
-        # For each string, calculate the weights
-        validation = validation(string, missing_string_boundary, wrong_value_in_padding, no_pad_token)
-        weight += validation
-        sanitize = sanitize_check(string, fail_sanitize)
-        weight += sanitize
-        weight += swap_loss(string, fail_swaps)
-        weights.append(weight)
-    
-    # Calculate the average weight
-    for i in range(len(weights)):
-        weight += weights[i]
-    weight = weight / len(weights)
-
-    return weight
-
 # This function is used to check the validity of the generated SMILES strings
 def validation(string, missing_string_boundary, wrong_value_in_padding, no_pad_token):
     weight = 0
@@ -101,7 +76,10 @@ def sanitize(string):
         return 1
     
 # This function is used to check the swap loss of the generated SMILES strings
-def change_loss(string, int_current):
+def change_loss(char_list, int_current):
+    string = ''.join(char_list)
+    integer = 0
+
     # If it is fixed subtract the number of swaps from the integer
     if (sanitize(string) == 0):
         int_current += 1 # add one more
@@ -112,9 +90,10 @@ def change_loss(string, int_current):
     return integer
 
 # This function is used to check the swap loss of the generated SMILES strings
-def swap_loss(string, fail_swaps):
-    string1, string2, string3, string4, string5, string6, string7, string8 = string
-    integer, int1, int2, int3, int4, int5, int6, int7, int8 = 0
+def swap_loss(string):
+    stringList = list(string)
+    string1, string2, string3, string4, string5, string6, string7, string8 = stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy()
+    integer, int1, int2, int3, int4, int5, int6, int7, int8 = 0, 0, 0, 0, 0, 0, 0, 0, 0
     for i in range(len(string)):
         # if the fix occurs stop the loop and give the negative value as the return
         string1[i] = 'c' # check c
@@ -122,55 +101,84 @@ def swap_loss(string, fail_swaps):
         integer = change_loss(string1[i], int1)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
         
         string2[i] = 'C' # check C
         int2 = i
         integer = change_loss(string2[i], int2)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
             
         string3[i] = '[' # open []
         int3 = i
         integer = change_loss(string3[i], int3)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
 
         string4[i] = ']' # close []
         int4 = i
         integer = change_loss(string4[i], int4)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
 
         string5[i] = '(' # open ()7
         int5 = i
         integer = change_loss(string5[i], int5)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
 
         string6[i] = ')' # close ()7
         int6 = i
         integer = change_loss(string6[i], int6)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
 
         string7[i] = '=' # bond7
         int7 = i
         integer = change_loss(string7[i], int7)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
 
         string8[i] = '' # reduce the string by one char
         int8 = i
         integer = change_loss(string8[i], int8)
         # check for fixed molecule
         if (integer < 0):
-            return integer + fail_swaps
+            return integer
     return integer
 
+# This class is used to calculate the weights of the generated SMILES strings
+def weights(logits, missing_string_boundary, wrong_value_in_padding, no_pad_token, fail_sanitize):
+    weights = []
+    weight = 0
+    weightFinal = 0
+
+    # Convert the logits to SMILES strings
+    # strings = convert_logits(logits)
+    strings = ['CC(=O)C1=CC=CC=C1C(=O)O', 'CC(=O)C1=CC=CC=C1C(=O)O', 'CC(=O)C1=CC=CC=C1C(=O)O'] # Example strings for testing
+
+    # Iterate through the generated SMILES strings
+    for string in strings:
+        # For each string, calculate the weights
+        validate = validation(string, missing_string_boundary, wrong_value_in_padding, no_pad_token)
+        weight += validate
+        sanitize = sanitize_check(string, fail_sanitize)
+        weight += sanitize
+        weight += swap_loss(string)
+        weights.append(weight)
+    
+    # Calculate the average weight
+    for i in range(len(weights)):
+        weightFinal += weights[i]
+    weightFinal = weightFinal / len(weights)
+
+    print(f"Average weight: {weightFinal}")
+    return weightFinal
+
+weights(logits=None, missing_string_boundary=missing_string_boundary, wrong_value_in_padding=wrong_value_in_padding, no_pad_token=no_pad_token, fail_sanitize=fail_sanitize)
