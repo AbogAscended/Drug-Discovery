@@ -1,46 +1,46 @@
 import torch
 import torch.nn as nn
 
-
-class GRUWrapper(nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        self.gru = nn.GRU(*args, **kwargs)
-
-    def forward(self, x):
-        output, _ = self.gru(x)
-        return output
-
 class CharRNN(nn.Module):
 
-    def __init__(self, vocab_size, pad_idx, hidden_size = 768, num_layers = 3, dropout = .2):
+    def __init__(self, vocab_size, hidden_size = 768):
         super(CharRNN, self).__init__()
-        self.pad_idx = pad_idx
-        self.vocabulary = vocab_size
         self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.dropout = dropout
-        self.vocab_size = vocab_size
         self.output_size = int(vocab_size)
 
-        self.encoder = nn.Sequential(
-            nn.Linear(self.output_size, self.hidden_size),
-            nn.LeakyReLU(),
-            GRUWrapper(self.hidden_size, self.hidden_size, batch_first=True),
-            nn.LeakyReLU(),
-            nn.Linear(self.hidden_size, self.output_size * 2),
-        )
+        self.linear_encode_in = nn.Linear(self.output_size, self.hidden_size)
 
-        self.decoder = nn.Sequential(
-            nn.Linear(self.output_size, self.hidden_size),
-            nn.LeakyReLU(),
-            GRUWrapper(self.hidden_size, self.hidden_size, batch_first=True),
-            nn.LeakyReLU(),
-            nn.Linear(self.hidden_size, self.output_size)
-        )
+        self.gru_encode1 = nn.GRU(self.hidden_size, self.hidden_size, batch_first=True)
+        self.gru_encode2 = nn.GRU(self.hidden_size, self.output_size * 2, batch_first=True)
+
+        self.gru_decode1 = nn.GRU(self.output_size, self.hidden_size, batch_first=True)
+        self.gru_decode2 = nn.GRU(self.hidden_size, self.hidden_size, batch_first=True)
+
+        self.linear_decode_out = nn.Linear(self.hidden_size, self.output_size)
+
+        self.LReLU = nn.LeakyReLU()
+        self.ReLU = nn.ReLU()
+        self.tanh = nn.Tanh()
+
+    def encode_network(self, x):
+        x = self.linear_encode_in(x)
+        x = self.LReLU(x)
+        x, _ = self.gru_encode1(x)
+        x = self.ReLU(x)
+        x, _ = self.gru_encode2(x)
+        return x
+
+    def decode_network(self, x):
+        x, _ = self.gru_decode1(x)
+        x = self.ReLU(x)
+        x, _ = self.gru_decode2(x)
+        x = self.LReLU(x)
+        x = self.linear_decode_out(x)
+        x = self.tanh(x)
+        return x
 
     def encode(self, x):
-        h = self.encoder(x)
+        h = self.encode_network(x)
         mu, logvar = torch.chunk(h, 2, dim=-1)
         std = torch.exp(0.5 * logvar)
         return mu, std
@@ -52,7 +52,7 @@ class CharRNN(nn.Module):
     def forward(self, x):
         mu, std = self.encode(x)
         z = self.reparameterize(mu, std)
-        x_reconstructed = self.decoder(z)
+        x_reconstructed = self.decode_network(z)
         return x_reconstructed, mu, std
 
 
