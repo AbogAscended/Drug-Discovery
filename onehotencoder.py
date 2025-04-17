@@ -1,5 +1,8 @@
 import torch
 import torch.nn.functional as F
+from jedi.settings import dynamic_params
+
+
 class onehotencoder:
     def __init__(self):
         self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]', '[EOS]', '[UNK]', '[PAD]']
@@ -8,7 +11,7 @@ class onehotencoder:
         self.len = len(self.cti)
 
     def encode(self, char):
-        return F.one_hot(torch.tensor([self.cti.get(char)]), num_classes = self.len)
+        return F.one_hot(torch.tensor([self.cti.get(char)]), num_classes = self.len).float()
     
     def decode(self, vec):
         return self.itc[torch.argmax(vec).item()]
@@ -19,7 +22,7 @@ class onehotencoder:
     def encode_sequence(self, sequence, targets = False):
         sequence = sequence.strip()
         tokens = []
-        if targets == False:
+        if not targets:
             tokens.append('[BOS]')
 
         i = 0
@@ -44,8 +47,9 @@ class onehotencoder:
         while len(tokens)<59: tokens.append('[PAD]')
         
         indices = [self.cti.get(char) for char in tokens]
-        return F.one_hot(torch.tensor(indices), num_classes=self.len)
+        return F.one_hot(torch.tensor(indices), num_classes=self.len).float()
 
+    # Takes in a matrix of one-hot encoded vectors and returns a single string.
     def decode_sequence(self, onehot_sequence):
         indices = torch.argmax(onehot_sequence, dim=1).tolist()
         return ''.join([self.itc[idx] for idx in indices])
