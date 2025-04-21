@@ -8,51 +8,50 @@ class CharRNN(nn.Module):
         self.hidden_size = hidden_size
         self.output_size = int(vocab_size)
 
-        self.linear_encode_in = nn.Linear(self.output_size, self.hidden_size)
-
-        self.gru_encode1 = nn.GRU(self.hidden_size, self.hidden_size, batch_first=True)
+        self.gru_encode1 = nn.GRU(self.output_size, self.hidden_size, batch_first=True)
         self.gru_encode2 = nn.GRU(self.hidden_size, self.output_size * 2, batch_first=True)
 
         self.gru_decode1 = nn.GRU(self.output_size, self.hidden_size, batch_first=True)
-        self.gru_decode2 = nn.GRU(self.hidden_size, self.hidden_size, batch_first=True)
-
-        self.linear_decode_out = nn.Linear(self.hidden_size, self.output_size)
+        self.gru_decode2 = nn.GRU(self.hidden_size, self.output_size, batch_first=True)
 
         self.LReLU = nn.LeakyReLU()
         self.ReLU = nn.ReLU()
         self.tanh = nn.Tanh()
 
-    def encode_network(self, x):
-        x = self.linear_encode_in(x)
-        x = self.LReLU(x)
-        x, _ = self.gru_encode1(x)
+    def encode_network(self, x, hidden):
+        x, hidden = self.gru_encode1(x, hidden)
         x = self.ReLU(x)
-        x, _ = self.gru_encode2(x)
-        return x
+        x, hidden = self.gru_encode2(x, hidden)
+        x = self.LReLU(x)
+        return x, hidden
 
-    def decode_network(self, x):
-        x, _ = self.gru_decode1(x)
+    def decode_network(self, x, hidden):
+        x, hidden = self.gru_decode1(x, hidden)
         x = self.ReLU(x)
-        x, _ = self.gru_decode2(x)
-        x = self.LReLU(x)
-        x = self.linear_decode_out(x)
+        x, hidden = self.gru_decode2(x)
         x = self.tanh(x)
-        return x
+        return x , hidden
 
-    def encode(self, x):
-        h = self.encode_network(x)
+    def encode(self, x, hidden):
+        h, hidden = self.encode_network(x, hidden)
         mu, logvar = torch.chunk(h, 2, dim=-1)
         std = torch.exp(0.5 * logvar)
-        return mu, std
+        return mu, std, hidden
 
     def reparameterize(self, mu, std):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def forward(self, x):
-        mu, std = self.encode(x)
+    def forward(self, x, hidden = None):
+        if hidden is None:
+            hidden = self.init_hidden(x.size(0)).to(x.device)
+        mu, std, hidden = self.encode(x, hidden)
         z = self.reparameterize(mu, std)
-        x_reconstructed = self.decode_network(z)
-        return x_reconstructed, mu, std
+        x_reconstructed, hidden = self.decode_network(z, hidden)
+        return x_reconstructed, mu, std, hidden
+
+    def init_hidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size)
+
 
 

@@ -1,9 +1,8 @@
 import torch
 import torch.nn.functional as F
-from jedi.settings import dynamic_params
 
 
-class onehotencoder:
+class OneHotEncoder:
     def __init__(self):
         self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]', '[EOS]', '[UNK]', '[PAD]']
         self.cti = {char: idx for idx, char in enumerate(self.characters)}
@@ -16,36 +15,35 @@ class onehotencoder:
     def decode(self, vec):
         return self.itc[torch.argmax(vec).item()]
     
-    def getVocabSize(self):
+    def get_vocab_size(self):
         return len(self.characters)
     
-    def encode_sequence(self, sequence, targets = False):
+    def encode_sequence(self, sequence, targets = False, skip_append = False):
         sequence = sequence.strip()
         tokens = []
-        if not targets:
-            tokens.append('[BOS]')
-
         i = 0
+        if skip_append or targets:
+            tokens.append('[BOS]')
         while i < len(sequence):
-            if i+1 < len(sequence) and sequence[i:i+2] == 'Cl':
+            if i + 1 < len(sequence) and sequence[i:i + 2] == 'Cl':
                 tokens.append('Cl')
                 i += 2
-            elif i+1 < len(sequence) and sequence[i:i+2] == 'Br':
+            elif i + 1 < len(sequence) and sequence[i:i + 2] == 'Br':
                 tokens.append('Br')
                 i += 2
-            elif i+4 < len(sequence) and sequence[i:i+5] == '[PAD]':
+            elif i + 4 < len(sequence) and sequence[i:i + 5] == '[PAD]':
                 tokens.append('[PAD]')
                 i += 5
-            elif i+4 < len(sequence) and sequence[i:i+5] == '[UNK]':
+            elif i + 4 < len(sequence) and sequence[i:i + 5] == '[UNK]':
                 tokens.append('[PAD]')
                 i += 5
             else:
                 tokens.append(sequence[i])
                 i += 1
+        if skip_append:
+            tokens.append('[EOS]')
+            while len(tokens) < 59: tokens.append('[PAD]')
 
-        tokens.append('[EOS]')
-        while len(tokens)<59: tokens.append('[PAD]')
-        
         indices = [self.cti.get(char) for char in tokens]
         return F.one_hot(torch.tensor(indices), num_classes=self.len).float()
 
