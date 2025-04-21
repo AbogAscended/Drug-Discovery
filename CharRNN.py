@@ -3,32 +3,23 @@ import torch.nn as nn
 
 class CharRNN(nn.Module):
 
-    def __init__(self, vocab_size, hidden_size = 768):
+    def __init__(self, vocab_size, num_layers):
         super(CharRNN, self).__init__()
-        self.hidden_size = hidden_size
+        self.num_layers = num_layers
         self.output_size = int(vocab_size)
-
-        self.gru_encode1 = nn.GRU(self.output_size, self.hidden_size, batch_first=True)
-        self.gru_encode2 = nn.GRU(self.hidden_size, self.output_size * 2, batch_first=True)
-
-        self.gru_decode1 = nn.GRU(self.output_size, self.hidden_size, batch_first=True)
-        self.gru_decode2 = nn.GRU(self.hidden_size, self.output_size, batch_first=True)
-
+        self.gru_encode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers,batch_first=True)
+        self.gru_decode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers, batch_first=True)
+        self.linear = nn.Linear(int(self.output_size*2*self.num_layers + self.output_size*2), self.output_size)
         self.LReLU = nn.LeakyReLU()
-        self.ReLU = nn.ReLU()
         self.tanh = nn.Tanh()
+        self.init_gru_weights()
 
     def encode_network(self, x, hidden):
-        x, hidden = self.gru_encode1(x, hidden)
-        x = self.ReLU(x)
-        x, hidden = self.gru_encode2(x, hidden)
-        x = self.LReLU(x)
+        x, hidden = self.gru_encode(x, hidden)
         return x, hidden
 
     def decode_network(self, x, hidden):
-        x, hidden = self.gru_decode1(x, hidden)
-        x = self.ReLU(x)
-        x, hidden = self.gru_decode2(x)
+        x, hidden = self.gru_decode(x, hidden)
         x = self.tanh(x)
         return x , hidden
 
@@ -43,15 +34,29 @@ class CharRNN(nn.Module):
         return mu + eps * std
 
     def forward(self, x, hidden = None):
-        if hidden is None:
-            hidden = self.init_hidden(x.size(0)).to(x.device)
         mu, std, hidden = self.encode(x, hidden)
         z = self.reparameterize(mu, std)
         x_reconstructed, hidden = self.decode_network(z, hidden)
-        return x_reconstructed, mu, std, hidden
+        hidden_copy = hidden.clone().view(1,-1)
+        x_reconstructed = x_reconstructed.view(1,-1)
+        combined = torch.cat((x_reconstructed, hidden_copy), dim=-1)
+        combined = self.LReLU(combined)
+        final_output = self.linear(combined)
+        logits = final_output
+        return logits, mu, std, hidden
 
     def init_hidden(self, batch_size):
-        return torch.zeros(1, batch_size, self.hidden_size)
+        return torch.zeros(int(self.num_layers), batch_size, self.output_size*2)
+
+    def init_gru_weights(self):
+        if isinstance(self, nn.GRU):
+            for name, param in self.named_parameters():
+                if 'weight_ih' in name:
+                    nn.init.xavier_uniform_(param.data)
+                elif 'weight_hh' in name:
+                    nn.init.orthogonal_(param.data)
+                elif 'bias' in name:
+                    param.data.fill_(0.0)
 
 
 

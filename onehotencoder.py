@@ -22,7 +22,7 @@ class OneHotEncoder:
         sequence = sequence.strip()
         tokens = []
         i = 0
-        if skip_append or targets:
+        if not (skip_append or targets):
             tokens.append('[BOS]')
         while i < len(sequence):
             if i + 1 < len(sequence) and sequence[i:i + 2] == 'Cl':
@@ -40,7 +40,7 @@ class OneHotEncoder:
             else:
                 tokens.append(sequence[i])
                 i += 1
-        if skip_append:
+        if not skip_append:
             tokens.append('[EOS]')
             while len(tokens) < 59: tokens.append('[PAD]')
 
