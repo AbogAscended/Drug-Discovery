@@ -3,16 +3,14 @@ import torch.nn as nn
 
 class CharRNN(nn.Module):
 
-    def __init__(self, vocab_size, num_layers, n_gram):
+    def __init__(self, vocab_size, num_layers, n_gram,dropout=0.2):
         super(CharRNN, self).__init__()
         self.num_layers = num_layers
         self.n_gram = n_gram
         self.output_size = int(vocab_size)
-        self.gru_encode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers,batch_first=True)
-        self.gru_decode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers, batch_first=True)
-        self.linear = nn.Linear(int(self.n_gram*self.output_size*2 + self.num_layers*self.output_size*2), self.output_size)
-        self.LReLU = nn.LeakyReLU()
-        self.tanh = nn.Tanh()
+        self.gru_encode = nn.GRU(self.output_size*self.n_gram, self.output_size*2, num_layers=self.num_layers,batch_first=True, dropout=dropout)
+        self.gru_decode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers, batch_first=True, dropout=dropout)
+        self.linear = nn.Linear(int(self.output_size*4), self.output_size)
         self.init_gru_weights()
 
     def encode_network(self, x, hidden):
@@ -21,7 +19,6 @@ class CharRNN(nn.Module):
 
     def decode_network(self, x, hidden):
         x, hidden = self.gru_decode(x, hidden)
-        x = self.tanh(x)
         return x , hidden
 
     def encode(self, x, hidden):
@@ -38,13 +35,10 @@ class CharRNN(nn.Module):
         mu, std, hidden = self.encode(x, hidden)
         z = self.reparameterize(mu, std)
         x_reconstructed, hidden = self.decode_network(z, hidden)
-        hidden_copy = hidden.clone().view(1,-1)
-        x_reconstructed = x_reconstructed.view(1,-1)
-        combined = torch.cat((x_reconstructed, hidden_copy), dim=-1)
-        combined = self.LReLU(combined)
+        hidden_final = hidden[-1].unsqueeze(1).expand(-1, 59, -1)
+        combined = torch.cat((x_reconstructed,hidden_final), dim=-1)
         final_output = self.linear(combined)
-        logits = final_output
-        return logits, mu, std, hidden
+        return final_output, mu, std, hidden
 
     def init_hidden(self, batch_size):
         return torch.zeros(int(self.num_layers), batch_size, self.output_size*2)
