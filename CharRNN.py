@@ -3,13 +3,14 @@ import torch.nn as nn
 
 class CharRNN(nn.Module):
 
-    def __init__(self, vocab_size, num_layers):
+    def __init__(self, vocab_size, num_layers, n_gram):
         super(CharRNN, self).__init__()
         self.num_layers = num_layers
+        self.n_gram = n_gram
         self.output_size = int(vocab_size)
         self.gru_encode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers,batch_first=True)
         self.gru_decode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers, batch_first=True)
-        self.linear = nn.Linear(int(self.output_size*2*self.num_layers + self.output_size*2), self.output_size)
+        self.linear = nn.Linear(int(self.n_gram*self.output_size*2 + self.num_layers*self.output_size*2), self.output_size)
         self.LReLU = nn.LeakyReLU()
         self.tanh = nn.Tanh()
         self.init_gru_weights()
