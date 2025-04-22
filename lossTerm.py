@@ -5,10 +5,8 @@ from rdkit.Chem import SanitizeFlags
 from rdkit.Chem import MolToSmiles
 from onehotencoder import onehotencoder
 
-
-
-class weight():
-    def __init__(self, batch_size, fail_sanitize, missing_string_boundary, wrong_value_in_padding, no_pad_token, fail_swaps):
+class lossTerm():
+    def __init__(self, logits, batch_size, fail_sanitize, missing_string_boundary, wrong_value_in_padding, no_pad_token, fail_swaps):
         self.batch_size = batch_size
         self.fail_sanitize = fail_sanitize
         self.missing_string_boundary = missing_string_boundary
@@ -16,28 +14,32 @@ class weight():
         self.no_pad_token = no_pad_token
         self.fail_swaps = fail_swaps
 
-        self.onehotencoder = onehotencoder()
+        self.endecode = onehotencoder()
+        if isinstance(logits, torch.Tensor):
+            self.logits = logits.to('cpu').detach().numpy()
+        else:
+            raise TypeError("logits must be a PyTorch tensor")
 
     # Convert the result to one-hot encoded vectors then decode them to SMILES strings
     # This function is used to convert the logits to SMILES strings
-    def convert_logits(self, logits):
+    def convert_logits(self):
         strings = []
-        for i in range(logits.size(dim=2)):
-            for j in range(logits.size(dim=1)):
-                strings.append(onehotencoder.decode_sequence(logits[i,j,:]))
+        for i in range(self.logits.size(dim=2)):
+            for j in range(self.logits.size(dim=1)):
+                strings.append(self.endecode.decode_sequence(self.logits[i,j,:]))
         return strings
 
     # This function is used to check the validity of the generated SMILES strings
     def validation(self, string):
-        weight = 0
+        loss = 0
         n = len(string)
         # First Check: Starts with BOS token
         if string[0:4] != '[BOS]':
-            weight += self.missing_string_boundary
+            loss += self.missing_string_boundary
         # Second Check: EOS token is present 
         eos_index = string.find('[EOS]')
         if eos_index == -1:
-            weight += self.missing_string_boundary
+            loss += self.missing_string_boundary
             #Third Check: check for a PAD token
             first_pad_index = string.find('[PAD]')
             if first_pad_index != -1:
@@ -46,7 +48,12 @@ class weight():
                 # Third Check: Only PAD tokens are present anywhere # TODO
                 pad_index = string.find('[EOS]')
                 if pad_index != -1:
-                    weight += self.wrong_value_in_padding
+                    loss += self.wrong_value_in_padding
+                # Fourth Check: Check for the length of the string
+                if n > 59:
+                    loss += self.wrong_value_in_padding
+        return loss
+
 
     # The first check to give loss if the string is not valid
     def sanitize_check(self, string):
@@ -137,28 +144,29 @@ class weight():
         return integer
 
     # This class is used to calculate the weights of the generated SMILES strings
-    def weights(self, logits):
-        weights = []
-        weight = 0
-        weightFinal = 0
+    def losses(self):
+        losses = []
+        loss = 0
+        lossTerm = 0
 
         # Convert the logits to SMILES strings
-        strings = self.convert_logits(logits)
+        strings = self.convert_logits(self.logits)
 
         # Iterate through the generated SMILES strings
         for string in strings:
             # For each string, calculate the weights
             validate = self.validation(string)
-            weight += validate
+            loss += validate
             sanitize = self.sanitize_check(string)
-            weight += sanitize
-            weight += self.swap_loss(string)
-            weights.append(weight)
+            loss += sanitize
+            loss += self.swap_loss(string)
+            losses.append(loss)
+            loss = 0
         
         # Calculate the average weight
-        for i in range(len(weights)):
-            weightFinal += weights[i]
-        weightFinal = weightFinal / len(weights)
+        for i in range(len(losses)):
+            lossTerm += losses[i]
+        lossTerm = lossTerm / len(losses)
 
-        print(f"Average weight: {weightFinal}")
-        return weightFinal
+        print(f"Average weight: {lossTerm}")
+        return lossTerm
