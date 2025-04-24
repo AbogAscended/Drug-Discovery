@@ -23,10 +23,10 @@ sequences = ['CCCS(=O)c1ccc2[nH]c(=NC(=O)OC)[nH]c2c1',
 # Convert the sequences to tensors (one hot encoded) using stack
 onehot = onehotencoder()  # Ensure the onehotencoder class is implemented and has an encode_sequence method
 logits = []
-encoded_array = [onehot.encode_sequence(seq, targets=False).numpy() for seq in sequences]
-tensor_list = [torch.tensor(row, dtype=torch.float32) for row in encoded_array]
+encoded_strings = [onehot.encode_sequence(seq, targets=False).numpy() for seq in sequences]
+tensors = [torch.tensor(enc) for enc in encoded_strings]
 
-logits = torch.stack(tensor_list)
+logits = torch.stack(tensors)
 
 # Create a lossTerm object
 lossTerm_obj = lossTerm(logits.clone().detach(), len(sequences), fail_sanitize, too_many_duplicates, wrong_value, fail_swaps).losses()  # Ensure the lossTerm class is implemented and has a losses method
