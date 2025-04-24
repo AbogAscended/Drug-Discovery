@@ -1,5 +1,7 @@
 import numpy as np
-import torch, torch.nn as nn, torch.optim as optim
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from rdkit import Chem
 from rdkit.Chem import SanitizeFlags
 from rdkit.Chem import MolToSmiles
@@ -43,7 +45,7 @@ class lossTerm():
             #Third Check: check for a PAD token
             first_pad_index = string.find('[PAD]')
             if first_pad_index != -1:
-                weight += self.no_pad_token
+                loss += self.no_pad_token
             else:
                 # Third Check: Only PAD tokens are present anywhere # TODO
                 pad_index = string.find('[EOS]')
