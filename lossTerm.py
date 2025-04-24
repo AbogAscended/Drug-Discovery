@@ -1,19 +1,14 @@
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
 from rdkit import Chem
 from rdkit.Chem import SanitizeFlags
-from rdkit.Chem import MolToSmiles
 from onehotencoder import onehotencoder
 
 class lossTerm():
-    def __init__(self, logits, batch_size, fail_sanitize, too_many_duplicates, wrong_value, missing_end_bracket, fail_swaps):
+    def __init__(self, logits, batch_size, fail_sanitize, too_many_duplicates, wrong_value, fail_swaps):
         self.batch_size = batch_size
         self.fail_sanitize = fail_sanitize
         self.too_many_duplicates = too_many_duplicates
         self.wrong_value = wrong_value
-        self.missing_end_bracket = missing_end_bracket
         self.fail_swaps = fail_swaps
         self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]', '[EOS]', '[UNK]', '[PAD]']
 
@@ -27,8 +22,8 @@ class lossTerm():
     # This function is used to convert the logits to SMILES strings
     def convert_logits(self):
         strings = []
-        for i in range(self.logits.size(dim=2)):
-            for j in range(self.logits.size(dim=1)):
+        for i in range(self.logits.shape[0]):
+            for j in range(self.logits.shape[1]):
                 strings.append(self.endecode.decode_sequence(self.logits[i,j,:]))
         return strings
 
@@ -58,6 +53,7 @@ class lossTerm():
                 loss += self.too_many_duplicates
             if ((string[i-1] == '1' and string[i] == '1') or (string[i-1] == '2' and string[i] == '2') or (string[i-1] == '3' and string[i] == '3') or (string[i-1] == '4' and string[i] == '4') or (string[i-1] == '5' and string[i] == '5') or (string[i-1] == '6' and string[i] == '6')):
                 loss += self.too_many_duplicates
+        print("Validation: ", loss)
         return loss
 
     # The first check to give loss if the string is not valid
@@ -65,9 +61,11 @@ class lossTerm():
         try:
             mol = Chem.MolFromSmiles(string)
             if mol is None:
+                print("Sanitization failed: Invalid SMILES string")
                 return self.fail_sanitize
             else:
                 Chem.SanitizeMol(mol, sanitizeFlags=SanitizeFlags.SANITIZE_ALL)
+                print("Sanitization successful")
                 return 0
         except Exception as e:
             print(f"Error sanitizing molecule: {e}")
@@ -79,8 +77,10 @@ class lossTerm():
         try:
             mol = Chem.MolFromSmiles(string)
             if mol is None:
+                print("Swap Sanitization failed")
                 return 1
             Chem.SanitizeMol(mol, sanitizeFlags=SanitizeFlags.SANITIZE_ALL)
+            print("Swaps successful")
             return 0
         except Exception as e:
             print(f"Error sanitizing molecule: {e}")
@@ -140,6 +140,8 @@ class lossTerm():
             if(self.sanitize(string_null) == 0):
                 integer += i # subtract the number of swaps
                 return -(integer * self.fail_swaps)
+        print("Swaps: ", len(string) * self.fail_swaps)
+        print("Swap weight: ", (len(string) * self.fail_swaps))
         return len(string) * self.fail_swaps # return the number of swaps
 
     # This class is used to calculate the weights of the generated SMILES strings
@@ -149,7 +151,7 @@ class lossTerm():
         lossTerm = 0
 
         # Convert the logits to SMILES strings
-        sequences = self.convert_logits(self.logits)
+        sequences = self.convert_logits()
 
         # Iterate through the sequences
         # For each string, calculate the weights
