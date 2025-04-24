@@ -85,68 +85,62 @@ class lossTerm():
         except Exception as e:
             print(f"Error sanitizing molecule: {e}")
             return 1
-    
-    # This function is used to check the swap loss of the generated SMILES strings
-    def change_loss(self, char_list, int_current):
-        string = ''.join(char_list)
-        integer = 0
-
-        # If it is fixed subtract the number of swaps from the integer
-        if (self.sanitize(string) == 0):
-            int_current -= 1
-            integer -= int_current # subtract the number of swaps
-        else:
-            int_current += 1
-            integer += int_current # add the number of swaps
-        return integer
 
     # This function is used to check the swap loss of the generated SMILES strings
     def swap_loss(self, string):
         stringList = list(string)
         string1, string2, string3, string4, string5, string6, string7, string8 = stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy(), stringList.copy()
-        integer, int1, int2, int3, int4, int5, int6, int7, int8 = 0, 0, 0, 0, 0, 0, 0, 0, 0
+        integer = 0
         for i in range(len(string)):
             # if the fix occurs stop the loop and give the negative value as the return
             string1[i] = 'c' # check c
-            integer = self.change_loss(string1[i], int1)
-            if (integer < 0):
-                return integer
+            string_c = ''.join(string1)
+            if(self.sanitize(string_c) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
             
             string2[i] = 'C' # check C
-            integer = self.change_loss(string2[i], int2)
-            if (integer < 0):
-                return integer
+            string_C = ''.join(string2)
+            if(self.sanitize(string_C) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
                 
             string3[i] = '[' # open []
-            integer = self.change_loss(string3[i], int3)
-            if (integer < 0):
-                return integer
+            string_openb = ''.join(string3)
+            if(self.sanitize(string_openb) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
 
             string4[i] = ']' # close []
-            integer = self.change_loss(string4[i], int4)
-            if (integer < 0):
-                return integer
+            string_closeb = ''.join(string4)
+            if(self.sanitize(string_closeb) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
 
             string5[i] = '(' # open ()
-            integer = self.change_loss(string5[i], int5)
-            if (integer < 0):
-                return integer
+            string_openpr = ''.join(string5)
+            if(self.sanitize(string_openpr) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
 
             string6[i] = ')' # close ()
-            integer = self.change_loss(string6[i], int6)
-            if (integer < 0):
-                return integer
+            string_closepr = ''.join(string6)
+            if(self.sanitize(string_closepr) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
 
             string7[i] = '=' # bond7
-            integer = self.change_loss(string7[i], int7)
-            if (integer < 0):
-                return integer
+            string_equ = ''.join(string7)
+            if(self.sanitize(string_equ) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
 
             string8[i] = '' # reduce the string by one char
-            integer = self.change_loss(string8[i], int8)
-            if (integer < 0):
-                return integer
-        return integer
+            string_null = ''.join(string8)
+            if(self.sanitize(string_null) == 0):
+                integer += i # subtract the number of swaps
+                return -(integer * self.fail_swaps)
+        return len(string) * self.fail_swaps # return the number of swaps
 
     # This class is used to calculate the weights of the generated SMILES strings
     def losses(self):
@@ -168,9 +162,6 @@ class lossTerm():
             loss += sanitize
             # Add the loss for the number of swaps
             loss += self.swap_loss(string)
-            # Check if the loss is negative
-            if (loss < 0):
-                loss = 0
             
             # Save the loss for this sequence/string
             losses.append(loss)
