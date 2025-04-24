@@ -8,13 +8,14 @@ from rdkit.Chem import MolToSmiles
 from onehotencoder import onehotencoder
 
 class lossTerm():
-    def __init__(self, logits, batch_size, fail_sanitize, missing_string_boundary, wrong_value_in_padding, no_pad_token, fail_swaps):
+    def __init__(self, logits, batch_size, fail_sanitize, too_many_duplicates, wrong_value, missing_end_bracket, fail_swaps):
         self.batch_size = batch_size
         self.fail_sanitize = fail_sanitize
-        self.missing_string_boundary = missing_string_boundary
-        self.wrong_value_in_padding = wrong_value_in_padding
-        self.no_pad_token = no_pad_token
+        self.too_many_duplicates = too_many_duplicates
+        self.wrong_value = wrong_value
+        self.missing_end_bracket = missing_end_bracket
         self.fail_swaps = fail_swaps
+        self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]', '[EOS]', '[UNK]', '[PAD]']
 
         self.endecode = onehotencoder()
         if isinstance(logits, torch.Tensor):
@@ -35,27 +36,29 @@ class lossTerm():
     def validation(self, string):
         loss = 0
         n = len(string)
-        # First Check: Starts with BOS token
-        if string[0:4] != '[BOS]':
-            loss += self.missing_string_boundary
-        # Second Check: EOS token is present 
-        eos_index = string.find('[EOS]')
-        if eos_index == -1:
-            loss += self.missing_string_boundary
-            #Third Check: check for a PAD token
-            first_pad_index = string.find('[PAD]')
-            if first_pad_index != -1:
-                loss += self.no_pad_token
-            else:
-                # Third Check: Only PAD tokens are present anywhere # TODO
-                pad_index = string.find('[EOS]')
-                if pad_index != -1:
-                    loss += self.wrong_value_in_padding
-                # Fourth Check: Check for the length of the string
-                if n > 59:
-                    loss += self.wrong_value_in_padding
+        i = 0
+        for i in range(n):
+            # Check for invalid characters
+            if string[i:i+5] == '[UNK]':
+                loss += self.wrong_value
+            if string[i:i+5] == '[PAD]':
+                loss += self.wrong_value
+            if string[0:5] != '[BOS]':
+                loss += self.wrong_value
+            if string[n-5:n] != '[EOS]':
+                loss += self.wrong_value
+            # Check for too many duplicate characters
+            if (string[i-5:i-1] == 'cccccccccc' and string[i] == 'c'):
+                loss += self.too_many_duplicates
+            if (string[i-5:i-1] == 'CCCCCCCCCC' and string[i] == 'C'):
+                loss += self.too_many_duplicates
+            if (string[i-13:i-1] == 'ClClClClClCl' and string[i:i+1] == 'Cl'):
+                loss += self.too_many_duplicates
+            if (string[i-5:i-1] == '[Br]' and string[i:i+4] == '[Br]'):
+                loss += self.too_many_duplicates
+            if ((string[i-1] == '1' and string[i] == '1') or (string[i-1] == '2' and string[i] == '2') or (string[i-1] == '3' and string[i] == '3') or (string[i-1] == '4' and string[i] == '4') or (string[i-1] == '5' and string[i] == '5') or (string[i-1] == '6' and string[i] == '6')):
+                loss += self.too_many_duplicates
         return loss
-
 
     # The first check to give loss if the string is not valid
     def sanitize_check(self, string):
@@ -90,7 +93,7 @@ class lossTerm():
 
         # If it is fixed subtract the number of swaps from the integer
         if (self.sanitize(string) == 0):
-            int_current += 1
+            int_current -= 1
             integer -= int_current # subtract the number of swaps
         else:
             int_current += 1
@@ -152,16 +155,24 @@ class lossTerm():
         lossTerm = 0
 
         # Convert the logits to SMILES strings
-        strings = self.convert_logits(self.logits)
+        sequences = self.convert_logits(self.logits)
 
-        # Iterate through the generated SMILES strings
-        for string in strings:
-            # For each string, calculate the weights
+        # Iterate through the sequences
+        # For each string, calculate the weights
+        for string in sequences:
+            # Add the loss for having invalid characters or too many duplicate characters
             validate = self.validation(string)
             loss += validate
+            # Add the loss for being an invalid molecule
             sanitize = self.sanitize_check(string)
             loss += sanitize
+            # Add the loss for the number of swaps
             loss += self.swap_loss(string)
+            # Check if the loss is negative
+            if (loss < 0):
+                loss = 0
+            
+            # Save the loss for this sequence/string
             losses.append(loss)
             loss = 0
         
@@ -170,5 +181,6 @@ class lossTerm():
             lossTerm += losses[i]
         lossTerm = lossTerm / len(losses)
 
+        # Print and return the average weight
         print(f"Average weight: {lossTerm}")
         return lossTerm
