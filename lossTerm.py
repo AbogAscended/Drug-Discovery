@@ -23,7 +23,8 @@ class lossTerm():
     def convert_logits(self):
         strings = []
         for i in range(self.logits.shape[0]):
-            strings.append(self.endecode.decode_sequence(self.logits[i, :, :]))
+            for j in range(self.logits.shape[1]):
+                strings.append(self.endecode.decode_sequence(self.logits[i, j, :]))
         return strings
 
     # This function is used to check the validity of the generated SMILES strings
