@@ -35,7 +35,7 @@ class CharRNN(nn.Module):
         mu, std, hidden = self.encode(x, hidden)
         z = self.reparameterize(mu, std)
         x_reconstructed, hidden = self.decode_network(z, hidden)
-        hidden_final = hidden[-1].unsqueeze(1).expand(-1, 59, -1)
+        hidden_final = hidden[-1].unsqueeze(1).expand(-1, x_reconstructed.shape[1], -1)
         combined = torch.cat((x_reconstructed,hidden_final), dim=-1)
         final_output = self.linear(combined)
         return final_output, mu, std, hidden
