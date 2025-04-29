@@ -18,10 +18,12 @@ class OneHotEncoder:
     def get_vocab_size(self):
         return len(self.characters)
     
-    def encode_sequence(self, sequence, targets = False, skip_append = False):
+    def encode_sequence(self, sequence, targets = False, skip_append = False, same_size = False):
         sequence = sequence.strip()
         tokens = []
         i = 0
+        if same_size:
+            tokens.append('[BOS]')
         if not (skip_append or targets):
             tokens.append('[BOS]')
         while i < len(sequence):
@@ -43,7 +45,8 @@ class OneHotEncoder:
         if not skip_append:
             tokens.append('[EOS]')
             while len(tokens) < 59: tokens.append('[PAD]')
-
+        if same_size:
+            tokens.append('[BOS]')
         indices = [self.cti.get(char) for char in tokens]
         return F.one_hot(torch.tensor(indices), num_classes=self.len).float()
 
