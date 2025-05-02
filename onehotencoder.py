@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class OneHotEncoder:
     def __init__(self):
-        self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]', '[EOS]', '[PAD]']
+        self.characters = ['Br', 'N', ')', 'c', 'o', '6', 's', 'Cl', '=', '2', ']', 'C', 'n', 'O', '4', '1', '#', 'S', 'F', '3', '[', '5', 'H', '(', '-', '[BOS]', '[EOS]']
         self.cti = {char: idx for idx, char in enumerate(self.characters)}
         self.itc = {idx: char for char, idx in self.cti.items()}
         self.len = len(self.cti)
@@ -44,7 +44,6 @@ class OneHotEncoder:
                 i += 1
         if not skip_append:
             tokens.append('[EOS]')
-            while len(tokens) < 59: tokens.append('[PAD]')
         if same_size:
             tokens.append('[BOS]')
         indices = [self.cti.get(char) for char in tokens]
