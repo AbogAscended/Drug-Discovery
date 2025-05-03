@@ -1,8 +1,9 @@
 import random, torch, bisect
+from multiprocessing import get_context
 from torch.utils.data import Dataset, Sampler, DataLoader, get_worker_info
 
 
-def worker_init_fn(worker_id):
+def worker_init_fn(worker_ids):
     worker_info = get_worker_info()
     dataset = worker_info.dataset
     dataset.file_handles = [
@@ -43,14 +44,18 @@ class Data:
             self.ds,
             batch_sampler=train_sampler,
             num_workers=self.num_workers,
-            worker_init_fn=worker_init_fn
+            worker_init_fn=worker_init_fn,
+            multiprocessing_context=get_context("spawn"),
+            persistent_workers=True
         )
 
         val_loader = DataLoader(
             self.ds,
             batch_sampler=val_sampler,
             num_workers=self.num_workers,
-            worker_init_fn=worker_init_fn
+            worker_init_fn=worker_init_fn,
+            multiprocessing_context=get_context("spawn"),
+            persistent_workers=True
         )
 
         total_steps = len(train_loader) * self.num_epochs
