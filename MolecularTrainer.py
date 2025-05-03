@@ -13,7 +13,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 endecode = OneHotEncoder()
 vocab_size = OneHotEncoder.get_vocab_size(self = endecode)
 num_layers = 3
-n_gram = 1
+n_gram = 2
 dropped_out = 0.2
 num_workers = 5
 hidden_size = 1024
@@ -35,7 +35,8 @@ def main():
     )
 
     trainer = Trainer(
-        max_epochs=200,
+        default_root_dir="lr_find_ckpts",
+        max_epochs=num_epochs,
         accelerator="cuda",
         precision="16-mixed",
         gradient_clip_val=5.0,
@@ -60,13 +61,7 @@ def main():
     )
 
     trainer.fit(charRNN, train_loader, val_loader)
-    torch.save(charRNN.state_dict(), "Models/charRNNv1-gram.pt")
-
-    torch.save(charRNN.state_dict(), "Models/charRNNv1-gram.pt")
-    filepath = 'data/GRUOnly1P1-gram.txt'
-    generator = Generator(charRNN, endecode, vocab_size, n_gram, p, temp)
-    generator.generate(filepath)
-
+    torch.save(charRNN.state_dict(), "Models/charRNNv2-gram.pt")
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method("spawn", force=True)
     main()

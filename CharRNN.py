@@ -58,7 +58,7 @@ class CharRNN(nn.Module):
                     param.data.fill_(0.0)
 
 class CharRNNV2(LightningModule):
-    def __init__(self, vocab_size, num_layers, n_gram, total_steps, warmup_steps, lr, hidden_size=1024, dropout=0.2,):
+    def __init__(self, vocab_size, num_layers, n_gram, total_steps=None, warmup_steps=None, lr=None, hidden_size=1024, dropout=0.2,):
         super().__init__()
         self.save_hyperparameters()
         self.GRU = nn.GRU(
@@ -82,7 +82,7 @@ class CharRNNV2(LightningModule):
         x = x.view(B, T, self.hparams.n_gram * self.hparams.vocab_size)
         target = y.argmax(dim=2)
 
-        hidden = self._init_hidden(B, x.device)
+        hidden = self.init_hidden(B, x.device)
         logits, _ = self(x, hidden)
 
         loss = F.cross_entropy(logits.permute(0, 2, 1), target)
@@ -95,7 +95,7 @@ class CharRNNV2(LightningModule):
         x = x.view(B, T, self.hparams.n_gram * self.hparams.vocab_size)
         target = y.argmax(dim=2)
 
-        hidden = self._init_hidden(B, x.device)
+        hidden = self.init_hidden(B, x.device)
         logits, _ = self(x, hidden)
 
         loss = F.cross_entropy(logits.permute(0, 2, 1), target)
@@ -116,7 +116,7 @@ class CharRNNV2(LightningModule):
         progress = float(step - self.hparams.warmup_steps) / float(max(1,self.hparams.total_steps - self.hparams.warmup_steps))
         return 0.5 * (1.0 + math.cos(math.pi * progress))
 
-    def _init_hidden(self, batch_size, device):
+    def init_hidden(self, batch_size, device):
         return torch.zeros(self.hparams.num_layers, batch_size, self.hparams.hidden_size,device=device)
 
     def _init_gru_weights(self):

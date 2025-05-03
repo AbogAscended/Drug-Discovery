@@ -101,7 +101,7 @@ class Generator:
             charCount = 0
             print(f"Generation {i + 1}/{int(2e4)}", end='\r')
             with torch.no_grad():
-                hidden = self.charRNN.init_hidden(1).to(self.device)
+                hidden = self.charRNN.init_hidden(1,device=self.device)
                 while True:
                     if current_n_gram.dim() == 2:
                         current_n_gram = current_n_gram.unsqueeze(0)
