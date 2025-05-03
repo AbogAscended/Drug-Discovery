@@ -1,6 +1,6 @@
 import math, torch, torch.nn as nn, torch.nn.functional as F, pytorch_lightning as pl
 from torch.optim.lr_scheduler import LambdaLR
-
+from lightning.pytorch import LightningModule
 
 def reparameterize(mu, std):
     eps = torch.randn_like(std)
@@ -57,7 +57,7 @@ class CharRNN(nn.Module):
                 elif 'bias' in name:
                     param.data.fill_(0.0)
 
-class CharRNNV2(pl.LightningModule):
+class CharRNNV2(LightningModule):
     def __init__(self, vocab_size, num_layers, n_gram, total_steps, warmup_steps, lr, hidden_size=1024, dropout=0.2,):
         super().__init__()
         self.save_hyperparameters()
