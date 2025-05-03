@@ -34,7 +34,7 @@ class Validator:
 
 class Generator:
     def __init__(self, char_rnn, endecode, vocab_size, n_gram, p, temp):
-        self.charRNN = char_rnn
+        self.charRNN = char_rnn.eval()
         self.endecode = endecode
         self.vocab_size = vocab_size
         self.n_gram = n_gram
@@ -80,7 +80,7 @@ class Generator:
 
         return "".join(token_parts)
 
-    def generate(self):
+    def generate(self, filepath):
         if self.n_gram == 1:
             current_n_gram = self.endecode.encode('[BOS]').to(self.device)
         else:
@@ -117,7 +117,7 @@ class Generator:
                     next_token = next_token.to(self.device)
                     current_n_gram = torch.concat([current_n_gram[1:], next_token.unsqueeze(0)], dim=0)
             generations.append(''.join(generation))
-        with open('data/GRUOnly1P1-gram.txt', 'w') as file:
+        with open(filepath, 'w') as file:
             for item in generations:
                 file.write(f"{item}\n")
 
