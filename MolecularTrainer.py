@@ -24,7 +24,6 @@ temp = 1
 p = 1
 
 def main():
-    # 1) Build data
     file_paths = [f'data/seqs_len{i}.txt' for i in range(18, 52)]
     data = Data(file_paths, endecode, n_gram, batch_size, num_workers, num_epochs)
     train_loader, val_loader, total_steps, warmup_steps = data.get_loaders()

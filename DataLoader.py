@@ -14,8 +14,8 @@ def worker_init_fn(worker_ids):
 class Data:
     def __init__(self, filepaths, encoder, n_gram, batch_size, num_workers, num_epochs):
         self.filepaths = filepaths
-        self.encoder   = encoder
-        self.n_gram    = n_gram
+        self.encoder = encoder
+        self.n_gram = n_gram
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.num_epochs = num_epochs
@@ -77,10 +77,10 @@ class ListBatchSampler(Sampler):
 class FileDataset(Dataset):
     def __init__(self, filepaths, encoder, n_gram):
         self.filepaths = filepaths
-        self.encoder   = encoder
-        self.n_gram    = n_gram
+        self.encoder = encoder
+        self.n_gram = n_gram
 
-        self.counts  = []
+        self.counts = []
         self.offsets = []
         total = 0
         for path in filepaths:
@@ -106,7 +106,7 @@ class FileDataset(Dataset):
             raise RuntimeError("file_handles not initialized – did you forget worker_init_fn?")
 
         file_idx = bisect.bisect_right(self.counts, idx)
-        prev     = 0 if file_idx == 0 else self.counts[file_idx-1]
+        prev = 0 if file_idx == 0 else self.counts[file_idx-1]
         line_idx = idx - prev
 
         fh = self.file_handles[file_idx]
@@ -114,10 +114,10 @@ class FileDataset(Dataset):
         seq = fh.readline().decode('utf-8').strip()
 
         seq_enc = self.encoder.encode_sequence(seq)  # (L, D)
-        L, D    = seq_enc.shape
-        n       = self.n_gram
+        L, D = seq_enc.shape
+        n = self.n_gram
 
-        windows = [seq_enc[i : i + n]       for i in range(L - n)]
+        windows = [seq_enc[i : i + n] for i in range(L - n)]
         targets = [seq_enc[i + n].view(1, D) for i in range(L - n)]
 
         return torch.stack(windows), torch.cat(targets, dim=0)
@@ -126,10 +126,10 @@ class FileDataset(Dataset):
 
 class FileBatchSampler(Sampler):
     def __init__(self, counts, batch_size, shuffle=True, drop_last=True, sample_ratio: float = 1.0):
-        self.counts     = counts
+        self.counts = counts
         self.batch_size = batch_size
-        self.shuffle    = shuffle
-        self.drop_last  = drop_last
+        self.shuffle = shuffle
+        self.drop_last = drop_last
         self.sample_ratio = sample_ratio
 
         self.batches = []
