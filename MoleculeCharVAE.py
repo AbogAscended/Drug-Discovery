@@ -17,13 +17,14 @@ torch.set_float32_matmul_precision("high")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 endecode = OneHotEncoder()
 vocab_size = OneHotEncoder.get_vocab_size(self = endecode)
-num_layers = 26
+num_layers = 2
 n_gram = 1
 dropped_out = 0.2
 learning_rate = 1e-6
 num_epochs = 20
 kl_epochs = 10
 batch_size = 128
+hidden_size = 1024
 num_workers = 5
 endecode = OneHotEncoder()
 
@@ -39,7 +40,8 @@ def main():
         learning_rate,
         warmup_steps,
         total_steps,
-        kl_epochs
+        kl_epochs,
+        hidden_size
     )
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')

@@ -14,18 +14,16 @@ class CharRNN(pl.LightningModule):
         n_gram: int,
         dropout: float,
         lr: float,
-        warmup_epochs: int,
-        max_epochs: int,
+        warmup_steps: int,
+        max_steps: int,
         kl_anneal_epochs: int,
         hidden_size: int,
     ):
         super().__init__()
         self.save_hyperparameters()
 
-        self.output_size = self.hparams.vocab_size
-
         self.gru_encode = nn.GRU(
-            input_size=self.output_size * self.hparams.n_gram,
+            input_size=self.hparams.vocab_size * self.hparams.n_gram,
             hidden_size=self.hparams.hidden_size,
             num_layers=self.hparams.num_layers,
             batch_first=True,
@@ -33,7 +31,7 @@ class CharRNN(pl.LightningModule):
         )
 
         self.gru_decode = nn.GRU(
-            input_size=self.hparams.vocab_size,
+            input_size=self.hparams.hidden_size,
             hidden_size=self.hparams.hidden_size,
             num_layers=self.hparams.num_layers,
             batch_first=True,
@@ -43,8 +41,7 @@ class CharRNN(pl.LightningModule):
         self.linear_mu = nn.Linear(self.hparams.hidden_size, self.hparams.vocab_size)
         self.linear_log_var = nn.Linear(self.hparams.hidden_size, self.hparams.vocab_size)
         self.linear_zh = nn.Linear(self.hparams.vocab_size, self.hparams.hidden_size)
-        self.linear_final = nn.Linear(self.hparams.hidden_size * 2, self.output_size)
-        self.relu = nn.ReLU()
+        self.linear_final = nn.Linear(self.hparams.hidden_size * 2, self.hparams.vocab_size)
         self._init_gru_weights()
 
     def _init_gru_weights(self):
@@ -61,7 +58,7 @@ class CharRNN(pl.LightningModule):
         return torch.zeros(
             self.hparams.num_layers,
             batch_size,
-            self.hparams.hidden_size * 2,
+            self.hparams.hidden_size,
             device=self.device
         )
 
@@ -69,7 +66,7 @@ class CharRNN(pl.LightningModule):
         kl = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=-1)
         return kl.mean()
 
-    def forward(self, x):
+    def forward(self, x, hidden=None):
         if hidden is None:
             hidden = self.init_hidden(x.size(0))
         B, S, N, V = x.size()
@@ -81,12 +78,13 @@ class CharRNN(pl.LightningModule):
         std = torch.exp(0.5 * log_var)
         z = mu + std * torch.randn_like(std)
 
-        dec_in, _
+        dec_in = self.linear_zh(z)
+        dec_out, hidden = self.gru_decode(dec_in, hidden)
 
         last_hidden = hidden[-1].unsqueeze(1).expand(-1, dec_out.size(1), -1)
         combined = torch.cat((dec_out, last_hidden), dim=-1)
-        combined = self.relu(combined)
-        logits = self.linear(combined)
+        logits = self.linear_final(combined)
+
         return logits, mu, log_var, hidden
 
     def training_step(self, batch, batch_idx):
@@ -125,27 +123,18 @@ class CharRNN(pl.LightningModule):
         return val_loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
-
-        def lr_lambda(epoch: int) -> float:
-            # linear warmup
-            if epoch < self.hparams.warmup_epochs:
-                return float(epoch) / float(max(1, self.hparams.warmup_epochs))
-            # cosine decay
-            progress = (epoch - self.hparams.warmup_epochs) / float(
-                max(1, self.hparams.max_epochs - self.hparams.warmup_epochs)
-            )
-            return 0.5 * (1.0 + math.cos(math.pi * progress))
-
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-        return {
-            'optimizer': optimizer,
-            'lr_scheduler': {
-                'scheduler': scheduler,
-                'interval': 'epoch',
-                'frequency': 1,
-            }
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
+        scheduler = {
+            "scheduler": LambdaLR(optimizer, lr_lambda=self._combined_lambda),
+            "interval": "step"
         }
+        return [optimizer], [scheduler]
+
+    def _combined_lambda(self, step):
+        if step < self.hparams.warmup_steps:
+            return float(step) / float(max(1, self.hparams.warmup_steps))
+        progress = float(step - self.hparams.warmup_steps) / float(max(1,self.hparams.max_steps - self.hparams.warmup_steps))
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
 class CharRNNV2(LightningModule):
