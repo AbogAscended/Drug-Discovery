@@ -1,7 +1,6 @@
 import torch, torch.nn as nn, numpy as np, pandas as pd
 from rdkit import RDLogger, Chem
 
-
 def sanitize(smiles: str) -> bool:
     smi = smiles.strip()
     try:
@@ -13,25 +12,41 @@ def sanitize(smiles: str) -> bool:
 
 
 class Validator:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, valid_path: str):
+        self.valid_path = valid_path
         self.file_path = file_path
         RDLogger.DisableLog('rdApp.*')
 
-    def validate_generation(self) -> float:
+    def validate_generation(self) -> None:
         valid_count = 0
         total = 0
-
+        valid = []
         with open(self.file_path, 'r') as f:
             for line in f:
                 total += 1
-                if sanitize(line):
+                if sanitize(line) and line.strip() != '':
                     valid_count += 1
+                    if line.strip() not in valid:
+                        valid.append(line.strip())
+        with open(self.valid_path, 'w') as file:
+            for item in valid:
+                file.write(f"{item.strip()}\n")
 
-        if total == 0:
-            return 0.0
+    def generate_stats(self):
+        with open('data/train.csv', 'r') as f:
+            original_lines = f.read().splitlines()
+        with open(self.valid_path, 'r') as f:
+            valid_lines = f.read().splitlines()
+        with open(self.file_path, 'r') as f:
+            generated_lines = f.read().splitlines()
+        actual_valid = len(valid_lines)/len(generated_lines) * 100
+        novel = 0
+        for line in valid_lines:
+            if line not in original_lines:
+                novel += 1
+        novel_rate = novel/len(valid_lines) * 100
 
-        return valid_count / total
-
+        return actual_valid, novel_rate
 class Generator:
     def __init__(self, char_rnn, endecode, vocab_size, n_gram, p, temp):
         self.charRNN = char_rnn.eval()
@@ -80,7 +95,7 @@ class Generator:
 
         return "".join(token_parts)
 
-    def generate(self, filepath):
+    def generate(self, filepath, amount):
         if self.n_gram == 1:
             current_n_gram = self.endecode.encode('[BOS]').to(self.device)
         else:
@@ -96,28 +111,33 @@ class Generator:
         self.charRNN.to(self.device)
         self.charRNN.eval()
         generations = []
-        for i in range(int(2e4)):
+        for i in range(int(amount)):
             generation = []
             charCount = 0
-            print(f"Generation {i + 1}/{int(2e4)}", end='\r')
+            print(f"Generation {i + 1}/{int(amount)}", end='\r')
             with torch.no_grad():
                 hidden = self.charRNN.init_hidden(1,device=self.device)
                 while True:
                     if current_n_gram.dim() == 2:
                         current_n_gram = current_n_gram.unsqueeze(0)
-                    logits, hidden = self.charRNN(current_n_gram, hidden)
-                    next_token_index = self.top_p_filtering(logits)
-                    next_token = torch.zeros(self.vocab_size)
-                    next_token[next_token_index] = 1
-                    char = self.endecode.decode(next_token)
-                    charCount += 1
-                    if char == '[EOS]' or charCount >= 400: break
+                    current_n_gram_flat = current_n_gram.view(1, 1, -1)
+                    logits, hidden = self.charRNN(current_n_gram_flat, hidden)
+                    next_idx = self.top_p_filtering(logits)
+                    next_vec = torch.zeros(self.vocab_size, device=current_n_gram_flat.device)
+                    next_vec[next_idx] = 1
+                    next_vec = next_vec.view(1, 1, -1)
+                    current_n_gram_flat = torch.roll(
+                        current_n_gram_flat,
+                        shifts=-self.vocab_size,
+                        dims=2
+                    )
+                    current_n_gram_flat[:, :, -self.vocab_size:] = next_vec
+                    char = self.endecode.decode(next_vec.squeeze(0))
                     generation.append(char)
-                    current_n_gram = current_n_gram.squeeze(0).to(self.device)
-                    next_token = next_token.to(self.device)
-                    current_n_gram = torch.concat([current_n_gram[1:], next_token.unsqueeze(0)], dim=0)
+                    charCount += 1
+                    if char == '[EOS]' or charCount >= 400:
+                        break
             generations.append(''.join(generation))
         with open(filepath, 'w') as file:
             for item in generations:
                 file.write(f"{item}\n")
-

@@ -1,61 +1,152 @@
-import math, torch, torch.nn as nn, torch.nn.functional as F, pytorch_lightning as pl
 from torch.optim.lr_scheduler import LambdaLR
 from lightning.pytorch import LightningModule
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import lightning.pytorch as pl
 
-def reparameterize(mu, std):
-    eps = torch.randn_like(std)
-    return mu + eps * std
+class CharRNN(pl.LightningModule):
+    def __init__(
+        self,
+        vocab_size: int,
+        num_layers: int,
+        n_gram: int,
+        dropout: float,
+        lr: float,
+        warmup_epochs: int,
+        max_epochs: int,
+        kl_anneal_epochs: int,
+        hidden_size: int,
+    ):
+        super().__init__()
+        self.save_hyperparameters()
 
+        self.output_size = self.hparams.vocab_size
 
-class CharRNN(nn.Module):
+        self.gru_encode = nn.GRU(
+            input_size=self.output_size * self.hparams.n_gram,
+            hidden_size=self.hparams.hidden_size,
+            num_layers=self.hparams.num_layers,
+            batch_first=True,
+            dropout=self.hparams.dropout,
+        )
 
-    def __init__(self, vocab_size, num_layers, n_gram,dropout=0.2):
-        super(CharRNN, self).__init__()
-        self.num_layers = num_layers
-        self.n_gram = n_gram
-        self.output_size = int(vocab_size)
-        self.gru_encode = nn.GRU(self.output_size*self.n_gram, self.output_size*2, num_layers=self.num_layers,batch_first=True, dropout=dropout)
-        self.gru_decode = nn.GRU(self.output_size, self.output_size*2, num_layers=self.num_layers, batch_first=True, dropout=dropout)
-        self.linear = nn.Linear(int(self.output_size*4), self.output_size)
+        self.gru_decode = nn.GRU(
+            input_size=self.hparams.vocab_size,
+            hidden_size=self.hparams.hidden_size,
+            num_layers=self.hparams.num_layers,
+            batch_first=True,
+            dropout=self.hparams.dropout,
+        )
+
+        self.linear_mu = nn.Linear(self.hparams.hidden_size, self.hparams.vocab_size)
+        self.linear_log_var = nn.Linear(self.hparams.hidden_size, self.hparams.vocab_size)
+        self.linear_zh = nn.Linear(self.hparams.vocab_size, self.hparams.hidden_size)
+        self.linear_final = nn.Linear(self.hparams.hidden_size * 2, self.output_size)
         self.relu = nn.ReLU()
-        self.init_gru_weights()
+        self._init_gru_weights()
 
-    def encode_network(self, x, hidden):
-        x, hidden = self.gru_encode(x, hidden)
-        return x, hidden
-
-    def decode_network(self, x, hidden):
-        x, hidden = self.gru_decode(x, hidden)
-        return x , hidden
-
-    def encode(self, x, hidden):
-        h, hidden = self.encode_network(x, hidden)
-        mu, log_var = torch.chunk(h, 2, dim=-1)
-        std = torch.exp(0.5 * log_var)
-        return mu, std, hidden
-
-    def forward(self, x, hidden = None):
-        mu, std, hidden = self.encode(x, hidden)
-        z = reparameterize(mu, std)
-        x_reconstructed, hidden = self.decode_network(z, hidden)
-        hidden_final = hidden[-1].unsqueeze(1).expand(-1, x_reconstructed.shape[1], -1)
-        combined = torch.cat((x_reconstructed,hidden_final), dim=-1)
-        combined = self.relu(combined)
-        final_output = self.linear(combined)
-        return final_output, mu, std, hidden
-
-    def init_hidden(self, batch_size):
-        return torch.zeros(int(self.num_layers), batch_size, self.output_size*2)
-
-    def init_gru_weights(self):
-        if isinstance(self, nn.GRU):
-            for name, param in self.named_parameters():
+    def _init_gru_weights(self):
+        for gru in (self.gru_encode, self.gru_decode):
+            for name, param in gru.named_parameters():
                 if 'weight_ih' in name:
-                    nn.init.xavier_uniform_(param.data)
+                    nn.init.xavier_uniform_(param)
                 elif 'weight_hh' in name:
-                    nn.init.orthogonal_(param.data)
+                    nn.init.orthogonal_(param)
                 elif 'bias' in name:
-                    param.data.fill_(0.0)
+                    nn.init.constant_(param, 0.0)
+
+    def init_hidden(self, batch_size: int):
+        return torch.zeros(
+            self.hparams.num_layers,
+            batch_size,
+            self.hparams.hidden_size * 2,
+            device=self.device
+        )
+
+    def kl_divergence(self, mu: torch.Tensor, log_var: torch.Tensor):
+        kl = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=-1)
+        return kl.mean()
+
+    def forward(self, x):
+        if hidden is None:
+            hidden = self.init_hidden(x.size(0))
+        B, S, N, V = x.size()
+        x = x.view(B, S, N * V)
+        enc_out, hidden = self.gru_encode(x, hidden)
+
+        mu = self.linear_mu(enc_out)
+        log_var = self.linear_log_var(enc_out)
+        std = torch.exp(0.5 * log_var)
+        z = mu + std * torch.randn_like(std)
+
+        dec_in, _
+
+        last_hidden = hidden[-1].unsqueeze(1).expand(-1, dec_out.size(1), -1)
+        combined = torch.cat((dec_out, last_hidden), dim=-1)
+        combined = self.relu(combined)
+        logits = self.linear(combined)
+        return logits, mu, log_var, hidden
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        logits, mu, log_var, _ = self(x)
+
+        rec_loss = F.cross_entropy(logits,y)
+        kl_loss = self.kl_divergence(mu, log_var)
+
+        # linearly anneal KL term over kl_anneal_epochs
+        kl_weight = min(1.0, self.current_epoch / self.hparams.kl_anneal_epochs)
+        loss = rec_loss + kl_weight * kl_loss
+
+        # logging
+        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train_rec', rec_loss, on_step=True, on_epoch=True)
+        self.log('train_kl', kl_loss, on_step=True, on_epoch=True)
+        self.log('kl_weight', kl_weight, on_step=True, on_epoch=True, prog_bar=True)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        logits, mu, log_var, _ = self(x)
+
+        rec_loss = F.cross_entropy(logits, y)
+        kl_loss = self.kl_divergence(mu, log_var)
+
+        kl_weight = min(1.0, self.current_epoch / self.hparams.kl_anneal_epochs)
+        val_loss = rec_loss + kl_weight * kl_loss
+
+        self.log('val_loss', val_loss, on_epoch=True, prog_bar=True)
+        self.log('val_rec', rec_loss, on_epoch=True)
+        self.log('val_kl', kl_loss, on_epoch=True)
+
+        return val_loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+
+        def lr_lambda(epoch: int) -> float:
+            # linear warmup
+            if epoch < self.hparams.warmup_epochs:
+                return float(epoch) / float(max(1, self.hparams.warmup_epochs))
+            # cosine decay
+            progress = (epoch - self.hparams.warmup_epochs) / float(
+                max(1, self.hparams.max_epochs - self.hparams.warmup_epochs)
+            )
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'interval': 'epoch',
+                'frequency': 1,
+            }
+        }
+
 
 class CharRNNV2(LightningModule):
     def __init__(self, vocab_size, num_layers, n_gram, total_steps=None, warmup_steps=None, lr=None, hidden_size=1024, dropout=0.2,):
@@ -86,6 +177,7 @@ class CharRNNV2(LightningModule):
         logits, _ = self(x, hidden)
 
         loss = F.cross_entropy(logits.permute(0, 2, 1), target)
+
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
@@ -99,6 +191,7 @@ class CharRNNV2(LightningModule):
         logits, _ = self(x, hidden)
 
         loss = F.cross_entropy(logits.permute(0, 2, 1), target)
+
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 

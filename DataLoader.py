@@ -33,7 +33,7 @@ class Data:
         all_batches = list(self.full_sampler)
         random.shuffle(all_batches)
 
-        val_frac = 0.10
+        val_frac = 0.20
         n_val = int(len(all_batches) * val_frac)
         val_batches = all_batches[:n_val]
         train_batches = all_batches[n_val:]

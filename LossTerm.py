@@ -3,9 +3,11 @@ from rdkit import Chem
 from rdkit import RDLogger
 from onehotencoder import OneHotEncoder
 import numpy as np
+from multiprocessing import Pool
 
 class LossTerm:
     def __init__(self, logits, fail_sanitize=0.5, too_many_duplicates=0.2, wrong_value=0.1, fail_swaps=0.1):
+        self.sanitize_cache = {}
         self.fail_sanitize = fail_sanitize
         self.too_many_duplicates = too_many_duplicates
         self.wrong_value = wrong_value
@@ -17,7 +19,7 @@ class LossTerm:
 
         self.endecode = OneHotEncoder()
         if isinstance(logits, torch.Tensor):
-            self.logits = logits.to('cpu').detach()
+            self.logits = logits.detach().to('cpu')
         else:
             raise TypeError("logits must be a PyTorch tensor")
 
@@ -29,129 +31,113 @@ class LossTerm:
             strings.append(self.endecode.decode_sequence(self.logits[i, :, :]))
         return strings
 
-    # This function is used to check the validity of the generated SMILES strings
+    # This function is used to check for common errors in SMILES strings
     def validation(self, string):
-        loss = 0
-        n = len(string)
-        i = 0
-        dictionary = dict.fromkeys(self.characters, 0)
-        for i in range(n):
-            # Check for invalid characters
-            if string[i:i+5] == '[UNK]':
-                loss += self.wrong_value
-            if string[i:i+5] == '[PAD]':
-                loss += self.wrong_value
-            # Check for too many duplicate characters
-            if string[i - 1] == string[i]:
-                dictionary[string[i]] += self.too_many_duplicates
-            if i > 5:
-                if string[i:i+5] == '[BOS]':
-                    loss += self.wrong_value
-            if i < n - 5:
-                if string[i:i+5] == '[EOS]':
-                    loss += self.wrong_value
-        if string[0:5] != '[BOS]':
-            loss += self.wrong_value
-        if string[n - 5:n] != '[EOS]':
-            loss += self.wrong_value
+        # Initialize Variables
+        val_loss = 0
+        prev_char = None
+        duplicate_count = 0
+        RDLogger.DisableLog('rdApp.*')
+        # Check for invalid start and end characters - missing [BOS] or [EOS]
+        if string[:5] != '[BOS]':
+            val_loss += self.wrong_value
+        if string[-5:] != '[EOS]':
+            val_loss += self.wrong_value
+        # Check for invalid characters throughout the string
+        for i in range(len(string)):
+            # Check for invalid characters - UNK or PAD
+            if string[i:i+5] in ('[UNK]', '[PAD]'):
+                val_loss += self.wrong_value
+            # Check for characters in invalid spots - [BOS] or [EOS]
+            if i > 5 and string[i:i+5] == '[BOS]':
+                val_loss += self.wrong_value
+            if i < len(string) - 5 and string[i:i+5] == '[EOS]':
+                val_loss += self.wrong_value
+            
+            # Check for too many duplicates
+            if prev_char == string[i]:
+                duplicate_count += 1
+            else:
+                val_loss += duplicate_count * self.too_many_duplicates
+                duplicate_count = 0
+            prev_char = string[i]
+        return val_loss
 
-        # final loss from validation
-        loss += sum(dictionary.values())
-        return loss
-
-    # This function is used to check if the SMILE string validates
+    # This function uses the cache to get the results of the sanitize function or the original sanitize logic
     def sanitize(self, string):
+        # Check if the string is already in the cache
+        if string in self.sanitize_cache:
+            return self.sanitize_cache.get(string) # return cached result if available
+        RDLogger.DisableLog('rdApp.*')
+        # If not in cache, sanitize the string and store the result
+        result = self._sanitize(string) # original sanitize logic
+        self.sanitize_cache.update({string: result})
+        return result
+    
+    # This function is used to check if the SMILE string validates
+    def _sanitize(self, string):
+        RDLogger.DisableLog('rdApp.*')
         try:
             mol = Chem.MolFromSmiles(string, sanitize=True)
             if mol:
-                return 0 # valid
+                return 1 # valid
             else:
-                return 1 # invalid
+                return 0 # invalid
         except Exception as e:
             print(f"Error sanitizing molecule: {e}")
-            return 1 # invalid with error
+            return 0 # invalid with error
 
-    # This function is used to check the swap loss of the generated SMILES strings
+    # This function is used to check if the string can becime valid by swapping characters
     def swap_loss(self, string):
+        substitution_chars = ['c', 'C', '[', ']', '(', ')', '=', '', 'Br', 'N', 's', 'Cl', '6', '4', '2', '1', '5', '#', 'O', 'F', 'H', '3', 'S', '-']
         string_list = list(string)
-        string1, string2, string3, string4 = string_list.copy(), string_list.copy(), string_list.copy(), string_list.copy()
-        string5, string6, string7, string8 = string_list.copy(), string_list.copy(), string_list.copy(), string_list.copy()
-        string9, string10, string11, string12 = string_list.copy(), string_list.copy(), string_list.copy(), string_list.copy()
-        string13, string14, string15, string16 = string_list.copy(), string_list.copy(), string_list.copy(), string_list.copy()
-        string17, string18, string19, string20 = string_list.copy(), string_list.copy(), string_list.copy(), string_list.copy()
-        string21 , string22, string23, string24 = string_list.copy(), string_list.copy(), string_list.copy(), string_list.copy()
-
-        # iterate through the string copies at the same time
+        
+        # Loop through the string and check for invalid characters
         for i in range(len(string)):
-            # change the char at i index in the string-char list
-            string1[i], string2[i], string3[i], string4[i] = 'c', 'C', '[', ']' # check c # check C # open [ # close ]
-            string5[i], string6[i], string7[i], string8[i] = '(', ')', '=', '' # open ( # close () # bond = # reduce ''
-            string9[i], string10[i], string11[i], string12[i] = 'Br', 'N', 's', 'Cl' # check Br # check N # check s # check N
-            string13[i], string14[i], string15[i], string16[i], string17[i] = '6', '4', '2', '1', '5' # check 6, 4, 2, 1, 5
-            string18[i], string19[i], string20[i], string21[i] = '#', 'O', 'F', 'H' # bond '#' # check O # check F, H
-            string22[i], string23[i], string24[i] = '3', 'S', '-' # check 3 # check S # check -
-
-            # For each character make the list into a string
-            string_c, string_upper_c, string_open_b, string_close_b = ''.join(string1), ''.join(string2), ''.join(string3), ''.join(string4)
-            string_open_pr, string_close_pr, string_equ, string_null = ''.join(string5), ''.join(string6), ''.join(string7), ''.join(string8)
-            string_br, string_n, string_s, string_cl  = ''.join(string9), ''.join(string10), ''.join(string11), ''.join(string12)
-            string_six, string_four, string_two = ''.join(string13), ''.join(string14), ''.join(string15)
-            string_one, string_five, string_hash = ''.join(string16), ''.join(string17), ''.join(string18)
-            string_o, string_f, string_h = ''.join(string19), ''.join(string18), ''.join(string19)
-            string_three, string_upper_s, string_hyphen = ''.join(string20), ''.join(string21), ''.join(string22)
-
-            # save sanitize checks
-            sanitize_checks = [self.sanitize(string_c), self.sanitize(string_upper_c), self.sanitize(string_open_b), self.sanitize(string_close_b),
-                     self.sanitize(string_open_pr), self.sanitize(string_close_pr), self.sanitize(string_equ), self.sanitize(string_null),
-                     self.sanitize(string_br), self.sanitize(string_n), self.sanitize(string_s), self.sanitize(string_cl),
-                     self.sanitize(string_six), self.sanitize(string_four), self.sanitize(string_two), self.sanitize(string_one),
-                     self.sanitize(string_five), self.sanitize(string_hash), self.sanitize(string_o), self.sanitize(string_f),
-                     self.sanitize(string_h), self.sanitize(string_three), self.sanitize(string_upper_s), self.sanitize(string_hyphen)]
-
-            # if the fix occurs, stop the loop and give the negative value as the return
-            if any(sanitize_checks) == 0:
-                integer = (len(string) - i) * self.fail_swaps
-                return -(integer * self.fail_swaps)
-
-        # Otherwise, swaps failed (so full penalty)
+            # Save the original character
+            original_char = string_list[i]
+            
+            # Try to swap with each substitution character
+            for sub_char in substitution_chars:
+                # Swap the character at index i with a substitution character
+                string_list[i] = sub_char
+                test_string = ''.join(string_list)
+                
+                # Check if the modified string is valid
+                if self.sanitize(test_string) == 1:
+                    return -((len(string) - i) * self.fail_swaps)
+                
+                # Revert the character to its original value
+                string_list[i] = original_char
+        # If no valid swap was found, return the number of swaps
         return len(string) * self.fail_swaps # return the number of swaps
 
     # This class is used to calculate the weights of the generated SMILES strings
+    def evaluate_string(self, string):
+        # Initialize the loss
+        loss = 0
+        
+        # Check if it is an invalid molecule
+        if self.sanitize(string) == 0:
+            # Add the loss for being an invalid molecule
+            loss += self.fail_sanitize
+            # Add the loss for having invalid characters or too many duplicate characters
+            loss += self.validation(string)
+            # Add the loss for the number of swaps
+            loss += self.swap_loss(string)
+        
+        # Return the loss as a positive value
+        return max(loss, 0)
+
+    # This function is used to calculate the loss for the batch
     def losses(self):
-        losses = []
-        loss, loss_term = 0, 0
-
-        # Convert the logits to SMILES strings
+        # Get the sequences from the logits
         sequences = self.convert_logits()
-
-        # Iterate through the sequences
-        # For each string, calculate the weights
-        for string in sequences:
-            # Check if it is an invalid molecule
-            if self.sanitize(string) == 1:
-                # Add the loss for being an invalid molecule
-                loss += self.fail_sanitize
-
-                # Add the loss for having invalid characters or too many duplicate characters
-                validate = self.validation(string)
-                loss += validate
-
-                # Add the loss for the number of swaps
-                loss += self.swap_loss(string)
-            else:
-                loss = 0
-            
-            # Save the loss for this sequence/string
-            if loss < 0:
-                loss = 0
-            losses.append(loss)
-            loss = 0 # Clean loss for the next string
-
-        # Calculate the average weight
-        for i in range(len(losses)):
-            loss_term += losses[i]
-        loss_term = loss_term / len(losses)
-
-        # Print and return the average weight
-        # print(f"Average weight: {loss_term}")
-        return np.log(loss_term)
+        
+        # Use multiprocessing to evaluate the strings
+        with Pool() as pool:
+            losses = pool.map(self.evaluate_string, sequences)
+        
+        # Calculate the average loss for the batch
+        return np.log(np.mean(losses))
+    

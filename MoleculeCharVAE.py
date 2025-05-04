@@ -1,4 +1,11 @@
-from CharRNN import CharRNNV2
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import lightning.pytorch as pl
+from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from CharRNN import CharRNN
 from DataLoader import *
 import torch
 from onehotencoder import OneHotEncoder
@@ -8,29 +15,39 @@ from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, RichProg
 from lightning.pytorch.loggers import TensorBoardLogger
 torch.set_float32_matmul_precision("high")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
 endecode = OneHotEncoder()
 vocab_size = OneHotEncoder.get_vocab_size(self = endecode)
-num_layers = 4
+num_layers = 26
 n_gram = 1
-dropped_out = 0.4
-num_workers = 5
-hidden_size = 1024
-learning_rate = 1e-4
-num_epochs = 100
+dropped_out = 0.2
+learning_rate = 1e-6
+num_epochs = 20
+kl_epochs = 10
 batch_size = 128
-temp = 1
-p = 1
+num_workers = 5
+endecode = OneHotEncoder()
 
 def main():
     file_paths = [f'data/seqs_len{i}.txt' for i in range(18, 52)]
     data = Data(file_paths, endecode, n_gram, batch_size, num_workers, num_epochs)
     train_loader, val_loader, total_steps, warmup_steps = data.get_loaders()
+    charRNN = CharRNN(
+        vocab_size,
+        num_layers,
+        n_gram,
+        dropped_out,
+        learning_rate,
+        warmup_steps,
+        total_steps,
+        kl_epochs
+    )
 
-    charRNN = CharRNNV2(
-       vocab_size, num_layers, n_gram,
-       total_steps=total_steps, warmup_steps=warmup_steps,
-       lr=learning_rate, hidden_size=hidden_size, dropout=dropped_out
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    checkpoint_cb = ModelCheckpoint(
+        monitor='val_loss',
+        save_top_k=1,
+        mode='min',
+        filename='check/char-rnn-{epoch:02d}-{val_loss:.2f}'
     )
 
     trainer = Trainer(
@@ -60,8 +77,8 @@ def main():
     )
 
     trainer.fit(charRNN, train_loader, val_loader)
-    torch.save(charRNN.state_dict(), "Models/charRNNv1L-gram.pt")
+    torch.save(charRNN.state_dict(), "Models/charRNN1-gram.pt")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     torch.multiprocessing.set_start_method("spawn", force=True)
     main()
