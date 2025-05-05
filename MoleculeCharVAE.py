@@ -1,10 +1,4 @@
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-import lightning.pytorch as pl
-from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.callbacks import LearningRateMonitor
 from CharRNN import CharRNN
 from DataLoader import *
 import torch
@@ -15,22 +9,25 @@ from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, RichProg
 from lightning.pytorch.loggers import TensorBoardLogger
 torch.set_float32_matmul_precision("high")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 endecode = OneHotEncoder()
 vocab_size = OneHotEncoder.get_vocab_size(self = endecode)
-num_layers = 2
+num_layers = 3
 n_gram = 1
 dropped_out = 0.2
 learning_rate = 1e-6
-num_epochs = 20
-kl_epochs = 10
+num_epochs = 10
+kl_epochs = 5
 batch_size = 128
 hidden_size = 1024
 num_workers = 5
+val_frac = .1
 endecode = OneHotEncoder()
 
 def main():
     file_paths = [f'data/seqs_len{i}.txt' for i in range(18, 52)]
-    data = Data(file_paths, endecode, n_gram, batch_size, num_workers, num_epochs)
+    data = Data(file_paths, endecode, n_gram, batch_size, num_workers, num_epochs, val_frac)
     train_loader, val_loader, total_steps, warmup_steps = data.get_loaders()
     charRNN = CharRNN(
         vocab_size,

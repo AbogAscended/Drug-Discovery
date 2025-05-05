@@ -12,13 +12,14 @@ def worker_init_fn(worker_ids):
 
 
 class Data:
-    def __init__(self, filepaths, encoder, n_gram, batch_size, num_workers, num_epochs):
+    def __init__(self, filepaths, encoder, n_gram, batch_size, num_workers, num_epochs, val_frac):
         self.filepaths = filepaths
         self.encoder = encoder
         self.n_gram = n_gram
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.num_epochs = num_epochs
+        self.val_frac = val_frac
         self.ds = FileDataset(filepaths, self.encoder, n_gram=n_gram)
         self.full_sampler = FileBatchSampler(
             counts=self.ds.counts,
@@ -33,7 +34,7 @@ class Data:
         all_batches = list(self.full_sampler)
         random.shuffle(all_batches)
 
-        val_frac = 0.20
+        val_frac = self.val_frac
         n_val = int(len(all_batches) * val_frac)
         val_batches = all_batches[:n_val]
         train_batches = all_batches[n_val:]

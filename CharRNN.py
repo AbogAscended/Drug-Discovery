@@ -53,6 +53,9 @@ class CharRNN(pl.LightningModule):
                     nn.init.orthogonal_(param)
                 elif 'bias' in name:
                     nn.init.constant_(param, 0.0)
+        for linear in (self.linear_mu, self.linear_log_var, self.linear_zh, self.linear_final):
+            nn.init.xavier_uniform_(linear.weight)
+            nn.init.zeros_(linear.bias)
 
     def init_hidden(self, batch_size: int):
         return torch.zeros(
@@ -91,18 +94,16 @@ class CharRNN(pl.LightningModule):
         x, y = batch
         logits, mu, log_var, _ = self(x)
 
-        rec_loss = F.cross_entropy(logits,y)
+        rec_loss = F.cross_entropy(logits.permute(0, 2, 1), y.argmax(dim=-1))
         kl_loss = self.kl_divergence(mu, log_var)
 
-        # linearly anneal KL term over kl_anneal_epochs
         kl_weight = min(1.0, self.current_epoch / self.hparams.kl_anneal_epochs)
         loss = rec_loss + kl_weight * kl_loss
 
-        # logging
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
-        self.log('train_rec', rec_loss, on_step=True, on_epoch=True)
-        self.log('train_kl', kl_loss, on_step=True, on_epoch=True)
-        self.log('kl_weight', kl_weight, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train_loss', loss, on_step=True, on_epoch=True)
+        self.log('train_rec', rec_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train_kl', kl_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('kl_weight', kl_weight, on_epoch=True, prog_bar=True)
 
         return loss
 
@@ -110,7 +111,7 @@ class CharRNN(pl.LightningModule):
         x, y = batch
         logits, mu, log_var, _ = self(x)
 
-        rec_loss = F.cross_entropy(logits, y)
+        rec_loss = F.cross_entropy(logits.permute(0, 2, 1) , y.argmax(dim=-1))
         kl_loss = self.kl_divergence(mu, log_var)
 
         kl_weight = min(1.0, self.current_epoch / self.hparams.kl_anneal_epochs)
@@ -160,7 +161,7 @@ class CharRNNV2(LightningModule):
         x, y = batch
         B, T, _, _ = x.size()
         x = x.view(B, T, self.hparams.n_gram * self.hparams.vocab_size)
-        target = y.argmax(dim=2)
+        target = y.argmax(dim=-1)
 
         hidden = self.init_hidden(B, x.device)
         logits, _ = self(x, hidden)
@@ -174,7 +175,7 @@ class CharRNNV2(LightningModule):
         x, y = batch
         B, T, _, _ = x.size()
         x = x.view(B, T, self.hparams.n_gram * self.hparams.vocab_size)
-        target = y.argmax(dim=2)
+        target = y.argmax(dim=-1)
 
         hidden = self.init_hidden(B, x.device)
         logits, _ = self(x, hidden)
