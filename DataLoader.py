@@ -12,7 +12,7 @@ def worker_init_fn(worker_ids):
 
 
 class Data:
-    def __init__(self, filepaths, encoder, n_gram, batch_size, num_workers, num_epochs, val_frac):
+    def __init__(self, filepaths, filepaths_test, encoder, n_gram, batch_size, num_workers, num_epochs, val_frac):
         self.filepaths = filepaths
         self.encoder = encoder
         self.n_gram = n_gram
@@ -20,29 +20,33 @@ class Data:
         self.num_workers = num_workers
         self.num_epochs = num_epochs
         self.val_frac = val_frac
-        self.ds = FileDataset(filepaths, self.encoder, n_gram=n_gram)
-        self.full_sampler = FileBatchSampler(
-            counts=self.ds.counts,
+        self.ds_train = FileDataset(filepaths, self.encoder, n_gram=n_gram)
+        self.ds_test = FileDataset(filepaths_test, self.encoder, n_gram=n_gram)
+        self.train = FileBatchSampler(
+            counts=self.ds_train.counts,
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=True,
+            sample_ratio=1.0
+        )
+        self.test = FileBatchSampler(
+            counts=self.ds_test.counts,
             batch_size=batch_size,
             shuffle=True,
             drop_last=True,
             sample_ratio=1.0
         )
 
-
     def get_loaders(self):
-        all_batches = list(self.full_sampler)
-        random.shuffle(all_batches)
-
-        val_frac = self.val_frac
-        n_val = int(len(all_batches) * val_frac)
-        val_batches = all_batches[:n_val]
-        train_batches = all_batches[n_val:]
+        train_batches = list(self.train)
+        test_batches = list(self.test)
+        random.shuffle(train_batches)
+        random.shuffle(test_batches)
         train_sampler = ListBatchSampler(train_batches)
-        val_sampler = ListBatchSampler(val_batches)
+        val_sampler = ListBatchSampler(test_batches)
 
         train_loader = DataLoader(
-            self.ds,
+            self.ds_train,
             batch_sampler=train_sampler,
             num_workers=self.num_workers,
             worker_init_fn=worker_init_fn,
@@ -51,7 +55,7 @@ class Data:
         )
 
         val_loader = DataLoader(
-            self.ds,
+            self.ds_test,
             batch_sampler=val_sampler,
             num_workers=self.num_workers,
             worker_init_fn=worker_init_fn,

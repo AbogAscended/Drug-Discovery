@@ -4,9 +4,8 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import lightning.pytorch as pl
 
-class CharRNN(pl.LightningModule):
+class CharRNN(LightningModule):
     def __init__(
         self,
         vocab_size: int,
@@ -14,10 +13,10 @@ class CharRNN(pl.LightningModule):
         n_gram: int,
         dropout: float,
         lr: float,
-        warmup_steps: int,
-        max_steps: int,
         kl_anneal_epochs: int,
         hidden_size: int,
+        warmup_steps: int = None,
+        max_steps: int = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -124,7 +123,7 @@ class CharRNN(pl.LightningModule):
         return val_loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr, weight_decay=1e-5)
         scheduler = {
             "scheduler": LambdaLR(optimizer, lr_lambda=self._combined_lambda),
             "interval": "step"
@@ -132,10 +131,11 @@ class CharRNN(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def _combined_lambda(self, step):
+        if step == 0:
+            return 1e-8
         if step < self.hparams.warmup_steps:
-            return float(step) / float(max(1, self.hparams.warmup_steps))
-        progress = float(step - self.hparams.warmup_steps) / float(max(1,self.hparams.max_steps - self.hparams.warmup_steps))
-        return 0.5 * (1.0 + math.cos(math.pi * progress))
+            return step / float(self.hparams.warmup_steps)
+        return (self.hparams.warmup_steps ** 0.5) * (step ** -0.5)
 
 
 class CharRNNV2(LightningModule):
