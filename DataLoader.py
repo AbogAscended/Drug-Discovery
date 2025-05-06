@@ -12,14 +12,13 @@ def worker_init_fn(worker_ids):
 
 
 class Data:
-    def __init__(self, filepaths, filepaths_test, encoder, n_gram, batch_size, num_workers, num_epochs, val_frac):
+    def __init__(self, filepaths, filepaths_test, encoder, n_gram, batch_size, num_workers, num_epochs):
         self.filepaths = filepaths
         self.encoder = encoder
         self.n_gram = n_gram
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.num_epochs = num_epochs
-        self.val_frac = val_frac
         self.ds_train = FileDataset(filepaths, self.encoder, n_gram=n_gram)
         self.ds_test = FileDataset(filepaths_test, self.encoder, n_gram=n_gram)
         self.train = FileBatchSampler(

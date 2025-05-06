@@ -11,9 +11,9 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 endecode = OneHotEncoder()
 vocab_size = OneHotEncoder.get_vocab_size(self = endecode)
-num_layers = 4
+num_layers = 3
 n_gram = 1
-dropped_out = 0.4
+dropped_out = 0.2
 num_workers = 5
 hidden_size = 1024
 learning_rate = 1e-4
@@ -24,7 +24,8 @@ p = 1
 
 def main():
     file_paths = [f'data/seqs_len{i}.txt' for i in range(18, 52)]
-    data = Data(file_paths, endecode, n_gram, batch_size, num_workers, num_epochs)
+    file_paths_test = [f'data/seqs_len{i}_test.txt' for i in range(22, 49)]
+    data = Data(file_paths, file_paths_test, endecode, n_gram, batch_size, num_workers, num_epochs)
     train_loader, val_loader, total_steps, warmup_steps = data.get_loaders()
 
     charRNN = CharRNNV2(

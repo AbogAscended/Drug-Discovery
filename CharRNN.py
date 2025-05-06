@@ -5,6 +5,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def confidence_penalty(logits, beta=0.1):
+    P = F.softmax(logits, dim=-1)
+    H = -(P * torch.log(P + 1e-12)).sum(dim=-1)
+    return -beta * H.mean()
+
+
 class CharRNN(LightningModule):
     def __init__(
         self,
@@ -17,12 +23,18 @@ class CharRNN(LightningModule):
         hidden_size: int,
         warmup_steps: int = None,
         max_steps: int = None,
+        embedding_dim: int = 128,
     ):
         super().__init__()
         self.save_hyperparameters()
 
+        self.embedding = nn.Embedding(
+            num_embeddings=self.hparams.vocab_size,
+            embedding_dim=self.hparams.embedding_dim
+        )
+
         self.gru_encode = nn.GRU(
-            input_size=self.hparams.vocab_size * self.hparams.n_gram,
+            input_size=self.hparams.embedding_dim * self.hparams.n_gram,
             hidden_size=self.hparams.hidden_size,
             num_layers=self.hparams.num_layers,
             batch_first=True,
@@ -64,16 +76,19 @@ class CharRNN(LightningModule):
             device=self.device
         )
 
-    def kl_divergence(self, mu: torch.Tensor, log_var: torch.Tensor):
-        kl = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=-1)
-        return kl.mean()
-
     def forward(self, x, hidden=None):
+        if x.dtype in (torch.float, torch.double):
+            x = x.argmax(dim=-1)
+        x = x.long().to(self.device)
         if hidden is None:
             hidden = self.init_hidden(x.size(0))
-        B, S, N, V = x.size()
-        x = x.view(B, S, N * V)
-        enc_out, hidden = self.gru_encode(x, hidden)
+
+        B, S, N = x.size()
+        x_embed = self.embedding(x)
+
+        x_flat = x_embed.view(B, S, N * self.hparams.embedding_dim)
+
+        enc_out, hidden = self.gru_encode(x_flat, hidden)
 
         mu = self.linear_mu(enc_out)
         log_var = self.linear_log_var(enc_out)
@@ -93,8 +108,8 @@ class CharRNN(LightningModule):
         x, y = batch
         logits, mu, log_var, _ = self(x)
 
-        rec_loss = F.cross_entropy(logits.permute(0, 2, 1), y.argmax(dim=-1))
-        kl_loss = self.kl_divergence(mu, log_var)
+        rec_loss = F.cross_entropy(logits.permute(0,2,1), y.argmax(dim=-1)) + confidence_penalty(logits)
+        kl_loss = -0.5 * torch.mean(torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1))
 
         kl_weight = min(1.0, self.current_epoch / self.hparams.kl_anneal_epochs)
         loss = rec_loss + kl_weight * kl_loss
@@ -110,15 +125,9 @@ class CharRNN(LightningModule):
         x, y = batch
         logits, mu, log_var, _ = self(x)
 
-        rec_loss = F.cross_entropy(logits.permute(0, 2, 1) , y.argmax(dim=-1))
-        kl_loss = self.kl_divergence(mu, log_var)
-
-        kl_weight = min(1.0, self.current_epoch / self.hparams.kl_anneal_epochs)
-        val_loss = rec_loss + kl_weight * kl_loss
+        val_loss = F.cross_entropy(logits.permute(0,2,1), y.argmax(dim=-1))
 
         self.log('val_loss', val_loss, on_epoch=True, prog_bar=True)
-        self.log('val_rec', rec_loss, on_epoch=True)
-        self.log('val_kl', kl_loss, on_epoch=True)
 
         return val_loss
 
@@ -139,11 +148,12 @@ class CharRNN(LightningModule):
 
 
 class CharRNNV2(LightningModule):
-    def __init__(self, vocab_size, num_layers, n_gram, total_steps=None, warmup_steps=None, lr=None, hidden_size=1024, dropout=0.2,):
+    def __init__(self, vocab_size, num_layers, n_gram, total_steps=None, warmup_steps=None, lr=None, hidden_size=1024, dropout=0.2, embedding_dim=128):
         super().__init__()
         self.save_hyperparameters()
+        self.embedding = nn.Embedding(self.hparams.vocab_size, self.hparams.embedding_dim)
         self.GRU = nn.GRU(
-            self.hparams.vocab_size * self.hparams.n_gram,
+            self.hparams.embedding_dim * self.hparams.n_gram,
             self.hparams.hidden_size,
             num_layers=self.hparams.num_layers,
             batch_first=True,
@@ -153,35 +163,33 @@ class CharRNNV2(LightningModule):
         self._init_gru_weights()
 
     def forward(self, x, hidden=None):
-        x, hidden = self.GRU(x, hidden)
+        if x.dtype in (torch.float, torch.double):
+            x = x.argmax(dim=-1)
+        x = x.long().to(self.device)
+        if hidden is None:
+            hidden = self.init_hidden(x.size(0),device=self.device)
+        B, S, N = x.size()
+        x_embed = self.embedding(x)
+        x_flat = x_embed.view(B, S, N * self.hparams.embedding_dim)
+        x, hidden = self.GRU(x_flat, hidden)
         cat = torch.cat([x,hidden[-1].unsqueeze(1).expand(-1, x.size(1), -1),],dim=-1)
         return self.linear(cat), hidden
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        B, T, _, _ = x.size()
-        x = x.view(B, T, self.hparams.n_gram * self.hparams.vocab_size)
         target = y.argmax(dim=-1)
-
-        hidden = self.init_hidden(B, x.device)
+        hidden = self.init_hidden(x.size(0), x.device)
         logits, _ = self(x, hidden)
-
         loss = F.cross_entropy(logits.permute(0, 2, 1), target)
-
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        B, T, _, _ = x.size()
-        x = x.view(B, T, self.hparams.n_gram * self.hparams.vocab_size)
         target = y.argmax(dim=-1)
-
-        hidden = self.init_hidden(B, x.device)
+        hidden = self.init_hidden(x.size(0), x.device)
         logits, _ = self(x, hidden)
-
         loss = F.cross_entropy(logits.permute(0, 2, 1), target)
-
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 

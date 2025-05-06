@@ -18,10 +18,10 @@ endecode = OneHotEncoder()
 vocab_size = OneHotEncoder.get_vocab_size(self = endecode)
 num_layers = 3
 n_gram = 1
-dropped_out = 0.4
+dropped_out = 0.5
 learning_rate = 1e-6
-num_epochs = 7
-kl_epochs = 5
+num_epochs = 5
+kl_epochs = 2
 batch_size = 128
 hidden_size = 1024
 num_workers = 5
@@ -29,7 +29,7 @@ num_workers = 5
 def main():
     file_paths = [f'data/seqs_len{i}.txt' for i in range(18, 52)]
     file_paths_test = [f'data/seqs_len{i}_test.txt' for i in range(22, 49)]
-    data = Data(file_paths, file_paths_test, endecode, n_gram, batch_size, num_workers, num_epochs, val_frac)
+    data = Data(file_paths, file_paths_test, endecode, n_gram, batch_size, num_workers, num_epochs)
     train_loader, val_loader, total_steps, warmup_steps = data.get_loaders()
     charRNN = CharRNN(
         vocab_size,
@@ -61,7 +61,7 @@ def main():
         logger=TensorBoardLogger("tb_logs", name="char_rnn"),
         callbacks=[
             ModelCheckpoint(monitor="val_loss", mode="min"),
-            EarlyStopping(monitor="val_loss", patience=5),
+            EarlyStopping(monitor="val_loss", patience=1),
             RichProgressBar()
         ],
         profiler=None,
@@ -79,7 +79,7 @@ def main():
     )
 
     trainer.fit(charRNN, train_loader, val_loader)
-    torch.save(charRNN.state_dict(), "Models/charRNN1-gram.pt")
+    torch.save(charRNN.state_dict(), "Models/charRNNNoFlow1-gram.pt")
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method("spawn", force=True)

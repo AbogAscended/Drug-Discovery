@@ -24,10 +24,11 @@ class Validator:
         with open(self.file_path, 'r') as f:
             for line in f:
                 total += 1
-                if sanitize(line) and line.strip() != '':
+                if sanitize(line) :
                     valid_count += 1
-                    if line.strip() not in valid:
+                    if line.strip() not in valid and line.strip() != '':
                         valid.append(line.strip())
+        print(f"Valid %: {valid_count/total * 100}")
         with open(self.valid_path, 'w') as file:
             for item in valid:
                 file.write(f"{item.strip()}\n")
@@ -39,14 +40,14 @@ class Validator:
             valid_lines = f.read().splitlines()
         with open(self.file_path, 'r') as f:
             generated_lines = f.read().splitlines()
-        actual_valid = len(valid_lines)/len(generated_lines) * 100
+        actual_unique = len(valid_lines)/len(generated_lines) * 100
         novel = 0
         for line in valid_lines:
             if line not in original_lines:
                 novel += 1
         novel_rate = novel/len(valid_lines) * 100
 
-        return actual_valid, novel_rate
+        return actual_unique, novel_rate
 class Generator:
     def __init__(self, char_rnn, endecode, vocab_size, n_gram, p, temp):
         self.charRNN = char_rnn.eval()
@@ -116,27 +117,22 @@ class Generator:
             charCount = 0
             print(f"Generation {i + 1}/{int(amount)}", end='\r')
             with torch.no_grad():
-                hidden = self.charRNN.init_hidden(1,device=self.device)
+                hidden = self.charRNN.init_hidden(1, self.device)
                 while True:
-                    if current_n_gram.dim() == 2:
+                    while current_n_gram.dim() < 4:
                         current_n_gram = current_n_gram.unsqueeze(0)
-                    current_n_gram_flat = current_n_gram.view(1, 1, -1)
-                    logits, hidden = self.charRNN(current_n_gram_flat, hidden)
+                    current_n_gram = current_n_gram.to(self.device)
+                    logits, hidden = self.charRNN(current_n_gram, hidden)
                     next_idx = self.top_p_filtering(logits)
-                    next_vec = torch.zeros(self.vocab_size, device=current_n_gram_flat.device)
+                    next_vec = torch.zeros(self.vocab_size, device=current_n_gram.device)
                     next_vec[next_idx] = 1
                     next_vec = next_vec.view(1, 1, -1)
-                    current_n_gram_flat = torch.roll(
-                        current_n_gram_flat,
-                        shifts=-self.vocab_size,
-                        dims=2
-                    )
-                    current_n_gram_flat[:, :, -self.vocab_size:] = next_vec
                     char = self.endecode.decode(next_vec.squeeze(0))
-                    generation.append(char)
                     charCount += 1
                     if char == '[EOS]' or charCount >= 400:
                         break
+                    generation.append(char)
+                    current_n_gram = next_vec.to(self.device)
             generations.append(''.join(generation))
         with open(filepath, 'w') as file:
             for item in generations:
